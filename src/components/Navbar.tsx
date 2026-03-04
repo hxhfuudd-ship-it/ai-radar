@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', label: '发现' },
+  { href: '/bookmarks', label: '收藏' },
   { href: '/chat', label: '对话' },
 ];
 
