@@ -60,10 +60,11 @@ export const defaultProvider: LLMProvider =
 export const APP_CONFIG = {
   dbPath: './data/ai-radar.db',
   scanIntervalHours: 12,
-  maxProjectsPerScan: 30,
+  maxProjectsPerScan: 15,
+  analysisConcurrency: 5,
+  readmeMaxChars: 4000,
+  skipIfAnalyzedWithinDays: 1,
   githubTopics: [
-    'llm', 'agent', 'mcp', 'rag', 'langchain', 'multi-agent',
-    'ai-agent', 'model-context-protocol', 'autonomous-agent',
-    'generative-ai', 'large-language-model', 'prompt-engineering',
+    'llm', 'agent', 'mcp', 'rag', 'ai-agent', 'multi-agent',
   ],
 };

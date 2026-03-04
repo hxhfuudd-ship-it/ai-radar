@@ -108,6 +108,16 @@ export default function ProjectDetailPage({
         <span className="text-sm text-muted-foreground">
           {project.forks?.toLocaleString()} forks
         </span>
+        {project.repoCreatedAt && (
+          <span className="text-sm text-muted-foreground">
+            创建于 {new Date(project.repoCreatedAt).toLocaleDateString('zh-CN')}
+          </span>
+        )}
+        {project.repoUpdatedAt && (
+          <span className="text-sm text-muted-foreground">
+            更新于 {new Date(project.repoUpdatedAt).toLocaleDateString('zh-CN')}
+          </span>
+        )}
         {project.language && (
           <Badge variant="outline">{project.language}</Badge>
         )}
@@ -144,12 +154,64 @@ export default function ProjectDetailPage({
             <CardTitle className="text-base">深度分析</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-              {project.analysis}
-            </div>
+            <AnalysisContent text={project.analysis} />
           </CardContent>
         </Card>
       )}
     </main>
   );
+}
+
+const HEADING_PATTERNS = [
+  /^【(.+?)】/,
+  /^#{1,3}\s+(.+)/,
+  /^\*\*(.+?)\*\*\s*$/,
+  /^(\S{2,8})\s*$/,
+];
+
+const KNOWN_HEADINGS = [
+  '一句话总结', '核心功能', '技术亮点', '适用场景', '值得关注的原因',
+  '项目概述', '功能特点', '技术架构', '使用场景', '总结',
+  '优势', '不足', '推荐理由', '核心特性', '主要功能',
+];
+
+function isHeading(line: string): string | null {
+  const trimmed = line.trim();
+  for (const pattern of HEADING_PATTERNS) {
+    const match = trimmed.match(pattern);
+    if (match) return match[1].trim();
+  }
+  const plain = trimmed.replace(/\*\*/g, '').replace(/[【】#]/g, '').trim();
+  if (KNOWN_HEADINGS.includes(plain)) return plain;
+  return null;
+}
+
+function AnalysisContent({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const heading = isHeading(line);
+
+    if (heading) {
+      elements.push(
+        <h3 key={i} className="mt-5 mb-2 text-sm font-bold text-foreground">
+          {heading}
+        </h3>
+      );
+    } else if (line.trim()) {
+      const cleaned = line
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/^[-·•]\s*/, '');
+      elements.push(
+        <p key={i} className="text-sm leading-relaxed text-muted-foreground mb-1.5">
+          {cleaned}
+        </p>
+      );
+    }
+  }
+
+  return <div>{elements}</div>;
 }

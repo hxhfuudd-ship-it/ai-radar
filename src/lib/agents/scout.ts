@@ -1,82 +1,68 @@
-import type { AgentConfig, ScanResult, RawProject } from './types';
+import type { ScanResult, RawProject } from './types';
 import { getTrendingAIRepos, searchRepos } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
-import { chat, systemMessage, userMessage } from '../llm';
+import { updateScanStatus } from '../scan-state';
 
-const config: AgentConfig = {
-  name: 'Scout',
-  role: '情报侦察兵',
-  provider: 'dashscope',
-  model: 'qwen-turbo',
-  systemPrompt: `你是 AI Radar 的情报侦察兵。你的任务是从搜索结果中筛选出真正有价值的 AI 相关项目。
+const AI_KEYWORDS = /\b(llm|agent|mcp|rag|langchain|gpt|openai|claude|gemini|embedding|vector|fine.?tun|prompt|diffusion|transformer|neural|deep.?learn|machine.?learn|nlp|chatbot|copilot|ai.?code)\b/i;
 
-筛选标准：
-1. 必须与 AI/LLM/Agent/MCP/RAG 等方向相关
-2. 优先选择有创新性的项目
-3. 过滤掉 awesome-list 类纯收集型仓库（除非特别优质）
-4. 过滤掉明显的教程/课程类仓库（除非特别优质）
+const BLOCKLIST = /\b(awesome-list|awesome|interview|cheatsheet|roadmap)\b/i;
 
-你会收到一组项目信息，请返回你认为值得深入分析的项目名称列表。
-只输出 JSON 数组，格式：["owner/repo1", "owner/repo2", ...]`,
-};
+function scoreRepo(repo: { description: string | null; topics: string[]; stargazers_count: number; full_name: string }): number {
+  let score = 0;
+  const text = `${repo.full_name} ${repo.description ?? ''} ${repo.topics.join(' ')}`;
+
+  if (AI_KEYWORDS.test(text)) score += 3;
+
+  if (repo.stargazers_count > 5000) score += 3;
+  else if (repo.stargazers_count > 1000) score += 2;
+  else if (repo.stargazers_count > 100) score += 1;
+
+  if (repo.topics.length >= 3) score += 1;
+  if (repo.description && repo.description.length > 30) score += 1;
+
+  if (BLOCKLIST.test(text)) score -= 3;
+
+  return score;
+}
 
 export async function runScout(): Promise<ScanResult> {
+  updateScanStatus({ current: '搜索 GitHub Trending...' });
   const trendingRepos = await getTrendingAIRepos();
+  updateScanStatus({ current: `找到 ${trendingRepos.length} 个热门仓库，补充搜索中...` });
 
-  const extraQueries = APP_CONFIG.githubTopics.slice(0, 3).map(
-    topic => `topic:${topic} stars:>50 pushed:>${getRecentDate(7)}`
+  const extraQueries = APP_CONFIG.githubTopics.slice(0, 2).map(
+    topic => `topic:${topic} stars:>10 created:>${getRecentDate(30)}`
   );
-
-  const extraResults = [];
-  for (const q of extraQueries) {
-    try {
-      const repos = await searchRepos(q, 'updated', 10);
-      extraResults.push(...repos);
-    } catch {
-      // continue on error
-    }
-  }
+  const extraSettled = await Promise.allSettled(
+    extraQueries.map(q => searchRepos(q, 'updated', 10))
+  );
+  const extraResults = extraSettled
+    .filter((r): r is PromiseFulfilledResult<typeof trendingRepos> => r.status === 'fulfilled')
+    .flatMap(r => r.value);
 
   const allRepos = dedup([...trendingRepos, ...extraResults]);
+  updateScanStatus({ current: `共 ${allRepos.length} 个候选，正在本地打分筛选...` });
 
-  const repoSummary = allRepos.map(r => ({
-    name: r.full_name,
+  const scored = allRepos
+    .map(r => ({ repo: r, score: scoreRepo(r) }))
+    .filter(s => s.score >= 3)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, APP_CONFIG.maxProjectsPerScan);
+
+  const projects: RawProject[] = scored.map(({ repo: r }) => ({
+    name: r.name,
+    fullName: r.full_name,
+    url: r.html_url,
     description: r.description,
     stars: r.stargazers_count,
+    forks: r.forks_count,
+    language: r.language,
     topics: r.topics,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   }));
 
-  let filteredNames: string[];
-  try {
-    const response = await chat({
-      messages: [
-        systemMessage(config.systemPrompt),
-        userMessage(JSON.stringify(repoSummary, null, 2)),
-      ],
-      provider: config.provider,
-      model: config.model,
-    });
-
-    const cleaned = response.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    filteredNames = JSON.parse(cleaned);
-  } catch {
-    filteredNames = allRepos.slice(0, APP_CONFIG.maxProjectsPerScan).map(r => r.full_name);
-  }
-
-  const filteredSet = new Set(filteredNames);
-  const projects: RawProject[] = allRepos
-    .filter(r => filteredSet.has(r.full_name))
-    .slice(0, APP_CONFIG.maxProjectsPerScan)
-    .map(r => ({
-      name: r.name,
-      fullName: r.full_name,
-      url: r.html_url,
-      description: r.description,
-      stars: r.stargazers_count,
-      forks: r.forks_count,
-      language: r.language,
-      topics: r.topics,
-    }));
+  updateScanStatus({ current: `筛选出 ${projects.length} 个值得分析的项目` });
 
   return {
     projects,

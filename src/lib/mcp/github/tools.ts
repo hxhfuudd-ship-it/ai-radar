@@ -37,29 +37,31 @@ export async function getTrendingAIRepos(): Promise<GitHubRepo[]> {
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const dateStr = oneWeekAgo.toISOString().split('T')[0];
 
+  const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const monthStr = oneMonthAgo.toISOString().split('T')[0];
+
   const queries = [
-    `topic:llm created:>${dateStr}`,
-    `topic:ai-agent created:>${dateStr}`,
-    `topic:mcp created:>${dateStr}`,
-    `topic:rag created:>${dateStr}`,
-    `"large language model" created:>${dateStr}`,
-    `"agent framework" created:>${dateStr}`,
+    `topic:llm stars:>10 created:>${dateStr}`,
+    `topic:ai-agent stars:>10 created:>${dateStr}`,
+    `topic:mcp stars:>5 created:>${monthStr}`,
+    `topic:rag stars:>10 created:>${dateStr}`,
   ];
+
+  const allResults = await Promise.allSettled(
+    queries.map(q => searchRepos(q, 'stars', 10))
+  );
 
   const results: GitHubRepo[] = [];
   const seen = new Set<number>();
 
-  for (const q of queries) {
-    try {
-      const repos = await searchRepos(q, 'stars', 10);
-      for (const repo of repos) {
+  for (const result of allResults) {
+    if (result.status === 'fulfilled') {
+      for (const repo of result.value) {
         if (!seen.has(repo.id)) {
           seen.add(repo.id);
           results.push(repo);
         }
       }
-    } catch {
-      // skip failed queries, continue with others
     }
   }
 
@@ -73,7 +75,7 @@ export async function getRepoReadme(fullName: string): Promise<string> {
   });
   if (!res.ok) return '';
   const text = await res.text();
-  return text.slice(0, 8000);
+  return text.slice(0, 4000);
 }
 
 export async function getRepoDetail(fullName: string): Promise<GitHubRepo | null> {

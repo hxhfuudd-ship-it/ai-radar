@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  status?: string;
 }
 
 export function ChatPanel() {
@@ -68,6 +69,17 @@ export function ChatPanel() {
 
           try {
             const parsed = JSON.parse(data);
+            if (parsed.status) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: 'assistant',
+                  content: accumulated,
+                  status: parsed.status,
+                };
+                return updated;
+              });
+            }
             if (parsed.content) {
               accumulated += parsed.content;
               setMessages((prev) => {
@@ -75,6 +87,7 @@ export function ChatPanel() {
                 updated[updated.length - 1] = {
                   role: 'assistant',
                   content: accumulated,
+                  status: undefined,
                 };
                 return updated;
               });
@@ -142,6 +155,12 @@ export function ChatPanel() {
                     : 'bg-muted'
                 }`}
               >
+                {msg.status && (
+                  <div className="mb-1.5 flex items-center gap-1.5 text-xs text-primary">
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+                    {msg.status}
+                  </div>
+                )}
                 <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
               </Card>
             </div>

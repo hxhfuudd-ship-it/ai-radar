@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
 
   const projects = query
-    .orderBy(desc(schema.projects.discoveredAt))
+    .orderBy(desc(schema.projects.score), desc(schema.projects.stars))
     .limit(limit)
     .offset(offset)
     .all();

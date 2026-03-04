@@ -22,6 +22,8 @@ export interface RawProject {
   forks: number;
   language: string | null;
   topics: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AnalysisResult {

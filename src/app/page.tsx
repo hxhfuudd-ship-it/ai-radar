@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { ProjectCard } from '@/components/ProjectCard';
-import { ScanButton } from '@/components/ScanButton';
+import { ScanProvider, ScanButton, ScanProgress } from '@/components/ScanButton';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,16 +43,19 @@ export default function HomePage() {
   }, [search, fetchProjects]);
 
   return (
+    <ScanProvider onComplete={() => { fetchProjects(); fetchTags(); }}>
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">AI Radar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             追踪 GitHub 上最新的 AI 项目和技术动态
           </p>
         </div>
-        <ScanButton onComplete={() => { fetchProjects(); fetchTags(); }} />
+        <ScanButton />
       </div>
+
+      <ScanProgress />
 
       <div className="mb-4">
         <Input
@@ -106,5 +109,6 @@ export default function HomePage() {
         </div>
       )}
     </main>
+    </ScanProvider>
   );
 }
