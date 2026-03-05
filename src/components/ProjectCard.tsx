@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Star, GitFork } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Project } from '@/lib/db/schema';
@@ -28,49 +29,62 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <Link href={`/project/${project.id}`}>
-      <Card className="transition-all hover:shadow-md hover:border-foreground/20 cursor-pointer h-full">
+      <Card className="group flex h-full flex-col cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-foreground/20 hover:-translate-y-0.5">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-base leading-tight line-clamp-1">
               {project.fullName}
             </CardTitle>
-            <span className="shrink-0 text-sm text-muted-foreground">
-              {project.stars?.toLocaleString()} stars
-            </span>
+            <div className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              {project.stars?.toLocaleString()}
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-1 flex-col gap-3">
           <p className="text-sm text-muted-foreground line-clamp-3">
             {project.summary ?? project.description ?? '暂无描述'}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {project.language && (
+            {project.language ? (
               <Badge variant="outline" className="text-xs">
                 {project.language}
               </Badge>
-            )}
-            {tags.slice(0, 4).map((tag) => (
+            ) : null}
+            {tags.slice(0, 4).map(tag => (
               <Badge key={tag} variant="secondary" className="text-xs">
                 {tag}
               </Badge>
             ))}
           </div>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            {project.score != null && project.score > 0 && (
+          <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground">
+            {project.score != null && project.score > 0 ? (
               <div className="flex items-center gap-1">
-                <span>推荐</span>
-                <span className="text-foreground font-medium">
-                  {'★'.repeat(project.score)}{'☆'.repeat(5 - project.score)}
-                </span>
+                <span>推荐指数</span>
+                <div className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star
+                      key={i}
+                      className={`h-3 w-3 ${
+                        i < project.score!
+                          ? 'fill-blue-500 text-blue-500'
+                          : 'text-muted-foreground/30'
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
-            )}
+            ) : <span />}
             <div className="flex items-center gap-2">
-              {project.repoUpdatedAt && (
+              {project.forks != null && project.forks > 0 ? (
+                <span className="flex items-center gap-0.5">
+                  <GitFork className="h-3 w-3" />
+                  {project.forks.toLocaleString()}
+                </span>
+              ) : null}
+              {project.repoUpdatedAt ? (
                 <span>更新 {formatRelative(project.repoUpdatedAt)}</span>
-              )}
-              {project.repoCreatedAt && (
-                <span>创建 {formatDate(project.repoCreatedAt)}</span>
-              )}
+              ) : null}
             </div>
           </div>
         </CardContent>

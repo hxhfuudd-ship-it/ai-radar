@@ -10,7 +10,7 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  const project = db
+  const project = await db
     .select()
     .from(schema.projects)
     .where(eq(schema.projects.id, id))
@@ -20,19 +20,19 @@ export async function GET(
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  const tagLinks = db
+  const tagLinks = await db
     .select()
     .from(schema.projectTags)
     .where(eq(schema.projectTags.projectId, id))
     .all();
 
-  const tagRecords = tagLinks
-    .map(tl =>
-      db.select().from(schema.tags).where(eq(schema.tags.id, tl.tagId)).get()
-    )
-    .filter(Boolean);
+  const tagRecords = [];
+  for (const tl of tagLinks) {
+    const tag = await db.select().from(schema.tags).where(eq(schema.tags.id, tl.tagId)).get();
+    if (tag) tagRecords.push(tag);
+  }
 
-  const isBookmarked = db
+  const isBookmarked = await db
     .select()
     .from(schema.bookmarks)
     .where(eq(schema.bookmarks.projectId, id))
@@ -40,7 +40,7 @@ export async function GET(
 
   return NextResponse.json({
     project,
-    tags: tagRecords.map(t => t!.name),
+    tags: tagRecords.map(t => t.name),
     isBookmarked: !!isBookmarked,
   });
 }

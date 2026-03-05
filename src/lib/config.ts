@@ -58,7 +58,6 @@ export const defaultProvider: LLMProvider =
   (env('DEFAULT_PROVIDER', 'dashscope') as LLMProvider);
 
 export const APP_CONFIG = {
-  dbPath: './data/ai-radar.db',
   scanIntervalHours: 12,
   maxProjectsPerScan: 15,
   analysisConcurrency: 5,

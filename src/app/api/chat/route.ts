@@ -1,15 +1,17 @@
 import { NextRequest } from 'next/server';
 import { chatWithAdvisor } from '@/lib/agents/advisor';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type { ProjectContext } from '@/lib/agents/advisor';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { message, history = [] } = body as {
+  const { message, history = [], projectContext } = body as {
     message: string;
     history: ChatCompletionMessageParam[];
+    projectContext?: ProjectContext;
   };
 
   if (!message) {
@@ -24,7 +26,7 @@ export async function POST(request: NextRequest) {
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        const responses = await chatWithAdvisor(message, history);
+        const responses = await chatWithAdvisor(message, history, projectContext);
 
         for (const resp of responses) {
           if (resp.type === 'status' && resp.status) {

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const rows = db
+  const rows = await db
     .select({
       bookmark: schema.bookmarks,
       project: schema.projects,
@@ -13,10 +13,9 @@ export async function GET() {
     .from(schema.bookmarks)
     .innerJoin(schema.projects, eq(schema.bookmarks.projectId, schema.projects.id))
     .orderBy(schema.bookmarks.createdAt)
-    .all()
-    .reverse();
+    .all();
 
-  const bookmarks = rows.map((r) => ({
+  const bookmarks = rows.reverse().map((r) => ({
     ...r.bookmark,
     project: r.project,
   }));
@@ -31,20 +30,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
   }
 
-  const existing = db
+  const existing = await db
     .select()
     .from(schema.bookmarks)
     .where(eq(schema.bookmarks.projectId, projectId))
     .get();
 
   if (existing) {
-    db.delete(schema.bookmarks)
+    await db.delete(schema.bookmarks)
       .where(eq(schema.bookmarks.id, existing.id))
       .run();
     return NextResponse.json({ bookmarked: false });
   }
 
-  db.insert(schema.bookmarks)
+  await db.insert(schema.bookmarks)
     .values({
       projectId,
       note: note ?? null,
@@ -62,7 +61,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
   }
 
-  const existing = db
+  const existing = await db
     .select()
     .from(schema.bookmarks)
     .where(eq(schema.bookmarks.projectId, projectId))
@@ -72,7 +71,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'bookmark not found' }, { status: 404 });
   }
 
-  db.update(schema.bookmarks)
+  await db.update(schema.bookmarks)
     .set({ note: note ?? null })
     .where(eq(schema.bookmarks.id, existing.id))
     .run();

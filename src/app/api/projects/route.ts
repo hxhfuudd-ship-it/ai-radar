@@ -14,19 +14,19 @@ export async function GET(request: NextRequest) {
   let query = db.select().from(schema.projects);
 
   if (tag) {
-    const tagRecord = db
+    const tagRecord = await db
       .select()
       .from(schema.tags)
       .where(eq(schema.tags.name, tag))
       .get();
 
     if (tagRecord) {
-      const projectIds = db
+      const ptRows = await db
         .select({ projectId: schema.projectTags.projectId })
         .from(schema.projectTags)
         .where(eq(schema.projectTags.tagId, tagRecord.id))
-        .all()
-        .map(pt => pt.projectId);
+        .all();
+      const projectIds = ptRows.map(pt => pt.projectId);
 
       if (projectIds.length > 0) {
         query = query.where(
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     ) as typeof query;
   }
 
-  const projects = query
+  const projects = await query
     .orderBy(desc(schema.projects.score), desc(schema.projects.stars))
     .limit(limit)
     .offset(offset)

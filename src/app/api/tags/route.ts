@@ -4,6 +4,6 @@ import { db, schema } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const tags = db.select().from(schema.tags).all();
+  const tags = await db.select().from(schema.tags).all();
   return NextResponse.json({ tags });
 }

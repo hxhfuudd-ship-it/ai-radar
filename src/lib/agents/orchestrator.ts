@@ -6,7 +6,6 @@ import { db, schema } from '../db';
 import { eq, lt } from 'drizzle-orm';
 import { getRepoReadme } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
-import { updateScanStatus } from '../scan-state';
 
 export interface ScanProgress {
   phase: 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
@@ -20,7 +19,7 @@ type ProgressCallback = (progress: ScanProgress) => void;
 
 export async function runFullScan(onProgress?: ProgressCallback, force = false) {
   try {
-    cleanupOldProjects();
+    await cleanupOldProjects();
 
     onProgress?.({ phase: 'scouting', total: 0, completed: 0 });
 
@@ -32,15 +31,14 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     const skipped: string[] = [];
 
     for (const p of dedupedProjects) {
-      const existing = db
+      const existing = await db
         .select()
         .from(schema.projects)
         .where(eq(schema.projects.fullName, p.fullName))
         .get();
 
-      // 即使跳过分析，也更新基础元数据
       if (existing) {
-        db.update(schema.projects)
+        await db.update(schema.projects)
           .set({
             stars: p.stars,
             forks: p.forks,
@@ -73,8 +71,6 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
       return { projectsFound: dedupedProjects.length, newAnalyzed: 0 };
     }
 
-    // README 预取
-    updateScanStatus({ phase: 'fetching', current: `获取 ${needAnalysis.length} 个项目的 README...` });
     onProgress?.({
       phase: 'fetching',
       total: needAnalysis.length,
@@ -93,7 +89,6 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
         readmeMap.set(batch[idx].fullName, r.status === 'fulfilled' ? r.value : '');
       });
       const fetched = Math.min(i + README_BATCH, needAnalysis.length);
-      updateScanStatus({ completed: fetched, total: needAnalysis.length });
       onProgress?.({
         phase: 'fetching',
         total: needAnalysis.length,
@@ -102,8 +97,6 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
       });
     }
 
-    // LLM 分析
-    updateScanStatus({ phase: 'analyzing', completed: 0 });
     onProgress?.({
       phase: 'analyzing',
       total: needAnalysis.length,
@@ -117,7 +110,6 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     for (let i = 0; i < needAnalysis.length; i += CONCURRENCY) {
       const batch = needAnalysis.slice(i, i + CONCURRENCY);
       const names = batch.map(p => p.name).join(', ');
-      updateScanStatus({ completed, current: names });
       onProgress?.({
         phase: 'analyzing',
         total: needAnalysis.length,
@@ -156,7 +148,7 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
 }
 
 async function processProject(project: RawProject, scannedAt: string, readme: string) {
-  const existing = db
+  const existing = await db
     .select()
     .from(schema.projects)
     .where(eq(schema.projects.fullName, project.fullName))
@@ -184,24 +176,24 @@ async function processProject(project: RawProject, scannedAt: string, readme: st
   };
 
   if (existing) {
-    db.update(schema.projects)
+    await db.update(schema.projects)
       .set(record)
       .where(eq(schema.projects.id, existing.id))
       .run();
   } else {
-    db.insert(schema.projects).values(record).run();
+    await db.insert(schema.projects).values(record).run();
   }
 
   for (const tagName of analysis.tags) {
-    let tag = db
+    let tag = await db
       .select()
       .from(schema.tags)
       .where(eq(schema.tags.name, tagName))
       .get();
 
     if (!tag) {
-      db.insert(schema.tags).values({ name: tagName }).run();
-      tag = db
+      await db.insert(schema.tags).values({ name: tagName }).run();
+      tag = await db
         .select()
         .from(schema.tags)
         .where(eq(schema.tags.name, tagName))
@@ -209,15 +201,15 @@ async function processProject(project: RawProject, scannedAt: string, readme: st
     }
 
     if (tag) {
-      const existingLink = db
+      const links = await db
         .select()
         .from(schema.projectTags)
         .where(eq(schema.projectTags.projectId, record.id))
-        .all()
-        .find(pt => pt.tagId === tag!.id);
+        .all();
+      const existingLink = links.find(pt => pt.tagId === tag!.id);
 
       if (!existingLink) {
-        db.insert(schema.projectTags)
+        await db.insert(schema.projectTags)
           .values({ projectId: record.id, tagId: tag.id })
           .run();
       }
@@ -234,27 +226,28 @@ function dedup(projects: RawProject[]): RawProject[] {
   });
 }
 
-function cleanupOldProjects() {
-  // 清理 30 天前的旧项目
+async function cleanupOldProjects() {
+  const bookmarkRows = await db.select({ projectId: schema.bookmarks.projectId }).from(schema.bookmarks).all();
+  const bookmarkedIds = new Set(bookmarkRows.map(b => b.projectId));
+
   const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const old = db
+  const oldRows = await db
     .select({ id: schema.projects.id })
     .from(schema.projects)
     .where(lt(schema.projects.discoveredAt, cutoff))
     .all();
+  const old = oldRows.filter(p => !bookmarkedIds.has(p.id));
 
   for (const { id } of old) {
-    db.delete(schema.projectTags).where(eq(schema.projectTags.projectId, id)).run();
-    db.delete(schema.bookmarks).where(eq(schema.bookmarks.projectId, id)).run();
-    db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+    await db.delete(schema.projectTags).where(eq(schema.projectTags.projectId, id)).run();
+    await db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
   }
 
   if (old.length > 0) {
-    console.log(`[Cleanup] 清理了 ${old.length} 个 30 天前的旧项目`);
+    console.log(`[Cleanup] 清理了 ${old.length} 个 30 天前的旧项目（已跳过收藏项目）`);
   }
 
-  // 清理重复项：同一个 fullName 只保留最新的
-  const all = db
+  const all = await db
     .select({ id: schema.projects.id, fullName: schema.projects.fullName, analyzedAt: schema.projects.analyzedAt })
     .from(schema.projects)
     .all();
@@ -271,9 +264,10 @@ function cleanupOldProjects() {
     if (rows.length <= 1) continue;
     rows.sort((a, b) => (b.analyzedAt ?? '').localeCompare(a.analyzedAt ?? ''));
     for (let i = 1; i < rows.length; i++) {
-      db.delete(schema.projectTags).where(eq(schema.projectTags.projectId, rows[i].id)).run();
-      db.delete(schema.bookmarks).where(eq(schema.bookmarks.projectId, rows[i].id)).run();
-      db.delete(schema.projects).where(eq(schema.projects.id, rows[i].id)).run();
+      const dupId = rows[i].id;
+      if (bookmarkedIds.has(dupId)) continue;
+      await db.delete(schema.projectTags).where(eq(schema.projectTags.projectId, dupId)).run();
+      await db.delete(schema.projects).where(eq(schema.projects.id, dupId)).run();
       dupCount++;
     }
   }

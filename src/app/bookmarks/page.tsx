@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Bookmark, Star } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,16 +24,19 @@ export default function BookmarksPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
 
-  const fetchBookmarks = useCallback(async () => {
-    const res = await fetch('/api/bookmarks');
-    const data = await res.json();
-    setBookmarks(data.bookmarks ?? []);
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
-    fetchBookmarks();
-  }, [fetchBookmarks]);
+    void fetch('/api/bookmarks')
+      .then(res => res.json())
+      .then(data => {
+        setBookmarks(data.bookmarks ?? []);
+      })
+      .catch(() => {
+        setBookmarks([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   async function removeBookmark(projectId: string) {
     await fetch('/api/bookmarks', {
@@ -40,7 +44,7 @@ export default function BookmarksPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId }),
     });
-    setBookmarks((prev) => prev.filter((b) => b.projectId !== projectId));
+    setBookmarks(prev => prev.filter(b => b.projectId !== projectId));
   }
 
   function startEditNote(bookmark: BookmarkItem) {
@@ -54,8 +58,8 @@ export default function BookmarksPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId, note: noteText.trim() || null }),
     });
-    setBookmarks((prev) =>
-      prev.map((b) =>
+    setBookmarks(prev =>
+      prev.map(b =>
         b.projectId === projectId
           ? { ...b, note: noteText.trim() || null }
           : b,
@@ -90,8 +94,11 @@ export default function BookmarksPage() {
       </div>
 
       {bookmarks.length === 0 ? (
-        <div className="py-20 text-center text-muted-foreground">
-          <p className="text-lg">收藏夹是空的</p>
+        <div className="flex flex-col items-center py-20 text-muted-foreground">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+            <Bookmark className="h-8 w-8" />
+          </div>
+          <p className="text-lg font-medium">收藏夹是空的</p>
           <p className="mt-2 text-sm">
             在项目详情页点击「收藏」按钮来添加项目
           </p>
@@ -103,7 +110,7 @@ export default function BookmarksPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {bookmarks.map((bm) => {
+          {bookmarks.map(bm => {
             const { project } = bm;
             const tags = project.topics?.split(',').filter(Boolean) ?? [];
             const isEditing = editingId === bm.projectId;
@@ -111,7 +118,7 @@ export default function BookmarksPage() {
             return (
               <Card key={bm.id} className="transition-all hover:shadow-md">
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/project/${project.id}`}
@@ -131,14 +138,13 @@ export default function BookmarksPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" className="min-h-[44px]">
                           GitHub
                         </Button>
                       </a>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="min-h-[44px] text-destructive hover:text-destructive"
                         onClick={() => removeBookmark(bm.projectId)}
                       >
                         取消收藏
@@ -148,25 +154,34 @@ export default function BookmarksPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {project.stars?.toLocaleString()} stars
+                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                      <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                      {project.stars?.toLocaleString()}
                     </span>
-                    {project.language && (
+                    {project.language ? (
                       <Badge variant="outline" className="text-xs">
                         {project.language}
                       </Badge>
-                    )}
-                    {tags.slice(0, 5).map((tag) => (
+                    ) : null}
+                    {tags.slice(0, 5).map(tag => (
                       <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
                       </Badge>
                     ))}
-                    {project.score != null && project.score > 0 && (
-                      <span className="ml-auto text-xs">
-                        {'★'.repeat(project.score)}
-                        {'☆'.repeat(5 - project.score)}
+                    {project.score != null && project.score > 0 ? (
+                      <span className="ml-auto flex items-center gap-0.5">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`h-3 w-3 ${
+                              i < project.score!
+                                ? 'fill-blue-500 text-blue-500'
+                                : 'text-muted-foreground/30'
+                            }`}
+                          />
+                        ))}
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   {isEditing ? (
@@ -174,7 +189,7 @@ export default function BookmarksPage() {
                       <Textarea
                         placeholder="写点笔记..."
                         value={noteText}
-                        onChange={(e) => setNoteText(e.target.value)}
+                        onChange={e => setNoteText(e.target.value)}
                         rows={3}
                         className="text-sm"
                         autoFocus
@@ -200,7 +215,7 @@ export default function BookmarksPage() {
                     </div>
                   ) : (
                     <div
-                      className="group cursor-pointer rounded-md border border-dashed border-border px-3 py-2 transition-colors hover:bg-muted/50"
+                      className="group cursor-pointer rounded-md border border-dashed border-border px-3 py-3 transition-colors hover:bg-muted/50 active:bg-muted/70"
                       onClick={() => startEditNote(bm)}
                     >
                       {bm.note ? (

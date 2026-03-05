@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, useCallback, use } from 'react';
 import Link from 'next/link';
+import { Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ProjectChat } from '@/components/ProjectChat';
 import type { Project } from '@/lib/db/schema';
 
 interface ProjectDetail {
@@ -38,7 +40,7 @@ export default function ProjectDetailPage({
     load();
   }, [id]);
 
-  async function toggleBookmark() {
+  const toggleBookmark = useCallback(async () => {
     if (!data) return;
     const res = await fetch('/api/bookmarks', {
       method: 'POST',
@@ -47,7 +49,7 @@ export default function ProjectDetailPage({
     });
     const result = await res.json();
     setBookmarked(result.bookmarked);
-  }
+  }, [data]);
 
   if (loading) {
     return (
@@ -84,19 +86,19 @@ export default function ProjectDetailPage({
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">{project.fullName}</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-2xl">{project.fullName}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {project.description}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={toggleBookmark}>
+          <Button variant="outline" className="min-h-[44px]" onClick={toggleBookmark}>
             {bookmarked ? '已收藏' : '收藏'}
           </Button>
           <a href={project.url} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm">GitHub</Button>
+            <Button variant="outline" className="min-h-[44px]">GitHub</Button>
           </a>
         </div>
       </div>
@@ -108,36 +110,45 @@ export default function ProjectDetailPage({
         <span className="text-sm text-muted-foreground">
           {project.forks?.toLocaleString()} forks
         </span>
-        {project.repoCreatedAt && (
+        {project.repoCreatedAt ? (
           <span className="text-sm text-muted-foreground">
             创建于 {new Date(project.repoCreatedAt).toLocaleDateString('zh-CN')}
           </span>
-        )}
-        {project.repoUpdatedAt && (
+        ) : null}
+        {project.repoUpdatedAt ? (
           <span className="text-sm text-muted-foreground">
             更新于 {new Date(project.repoUpdatedAt).toLocaleDateString('zh-CN')}
           </span>
-        )}
-        {project.language && (
+        ) : null}
+        {project.language ? (
           <Badge variant="outline">{project.language}</Badge>
-        )}
-        {tags.map((tag) => (
+        ) : null}
+        {tags.map(tag => (
           <Badge key={tag} variant="secondary">{tag}</Badge>
         ))}
       </div>
 
-      {project.score != null && project.score > 0 && (
+      {project.score != null && project.score > 0 ? (
         <div className="mt-3 flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">推荐指数</span>
-          <span className="font-medium">
-            {'★'.repeat(project.score)}{'☆'.repeat(5 - project.score)}
-          </span>
+          <div className="flex items-center gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star
+                key={i}
+                className={`h-4 w-4 ${
+                  i < project.score!
+                    ? 'fill-blue-500 text-blue-500'
+                    : 'text-muted-foreground/30'
+                }`}
+              />
+            ))}
+          </div>
         </div>
-      )}
+      ) : null}
 
       <Separator className="my-6" />
 
-      {project.summary && (
+      {project.summary ? (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="text-base">AI 摘要</CardTitle>
@@ -146,10 +157,10 @@ export default function ProjectDetailPage({
             <p className="text-sm leading-relaxed">{project.summary}</p>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
-      {project.analysis && (
-        <Card>
+      {project.analysis ? (
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle className="text-base">深度分析</CardTitle>
           </CardHeader>
@@ -157,7 +168,20 @@ export default function ProjectDetailPage({
             <AnalysisContent text={project.analysis} />
           </CardContent>
         </Card>
-      )}
+      ) : null}
+
+      <ProjectChat
+        project={{
+          fullName: project.fullName,
+          url: project.url,
+          description: project.description,
+          stars: project.stars,
+          language: project.language,
+          topics: project.topics,
+          summary: project.summary,
+          analysis: project.analysis,
+        }}
+      />
     </main>
   );
 }
@@ -169,11 +193,11 @@ const HEADING_PATTERNS = [
   /^(\S{2,8})\s*$/,
 ];
 
-const KNOWN_HEADINGS = [
+const KNOWN_HEADINGS = new Set([
   '一句话总结', '核心功能', '技术亮点', '适用场景', '值得关注的原因',
   '项目概述', '功能特点', '技术架构', '使用场景', '总结',
   '优势', '不足', '推荐理由', '核心特性', '主要功能',
-];
+]);
 
 function isHeading(line: string): string | null {
   const trimmed = line.trim();
@@ -182,7 +206,7 @@ function isHeading(line: string): string | null {
     if (match) return match[1].trim();
   }
   const plain = trimmed.replace(/\*\*/g, '').replace(/[【】#]/g, '').trim();
-  if (KNOWN_HEADINGS.includes(plain)) return plain;
+  if (KNOWN_HEADINGS.has(plain)) return plain;
   return null;
 }
 
