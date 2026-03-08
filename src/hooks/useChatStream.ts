@@ -118,6 +118,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       if (!reader) throw new Error('No reader');
 
       let sseBuffer = '';
+      let streamDone = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -129,7 +130,10 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
-          if (data === '[DONE]') break;
+          if (data === '[DONE]') {
+            streamDone = true;
+            break;
+          }
           try {
             const parsed = JSON.parse(data);
             if (parsed.status) {
@@ -149,9 +153,17 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 rafId = requestAnimationFrame(flushContent);
               }
             }
+            if (parsed.error) {
+              throw new Error(String(parsed.error));
+            }
           } catch {
             // skip malformed chunks
           }
+        }
+
+        if (streamDone) {
+          await reader.cancel();
+          break;
         }
       }
     } catch {

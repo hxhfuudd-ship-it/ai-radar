@@ -118,6 +118,8 @@ export function ProjectChat({ project }: ProjectChatProps) {
             (() => {
               const currentStep = resolveProjectStep(msg.status, elapsed);
               const liveStatus = msg.status ?? `${PROJECT_LOADING_STEPS[currentStep].title}中...`;
+              const current = PROJECT_LOADING_STEPS[currentStep];
+              const stepProgress = Math.round(((currentStep + 1) / PROJECT_LOADING_STEPS.length) * 100);
 
               return (
                 <div
@@ -157,36 +159,28 @@ export function ProjectChat({ project }: ProjectChatProps) {
                               <span>AI 正在处理{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
                             </div>
 
-                            <div className="space-y-1.5">
-                              {PROJECT_LOADING_STEPS.map((step, idx) => (
-                                <div key={step.title} className="flex items-start gap-2">
-                                  <span
-                                    className={`mt-0.5 inline-block h-1.5 w-1.5 rounded-full ${
-                                      idx < currentStep
-                                        ? 'bg-primary/80'
-                                        : idx === currentStep
-                                          ? 'thinking-pulse bg-primary'
-                                          : 'bg-muted-foreground/35'
-                                    }`}
-                                  />
-                                  <div className="min-w-0">
-                                    <p
-                                      className={`text-[11px] leading-tight ${
-                                        idx === currentStep
-                                          ? 'text-foreground'
-                                          : 'text-muted-foreground'
-                                      }`}
-                                    >
-                                      {step.title}
-                                    </p>
-                                    {idx === currentStep ? (
-                                      <p className="text-[10px] text-muted-foreground/90">
-                                        {step.hint}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                              <span className="inline-flex items-center gap-1">
+                                <span className="thinking-pulse inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                                当前步骤 {currentStep + 1}/{PROJECT_LOADING_STEPS.length}
+                              </span>
+                              <span>{stepProgress}%</span>
+                            </div>
+
+                            <div className="mt-1.5">
+                              <p className="text-[12px] font-medium leading-tight text-foreground">
+                                {current.title}
+                              </p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground/90">
+                                {current.hint}
+                              </p>
+                            </div>
+
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted-foreground/10">
+                              <div
+                                className="h-full rounded-full bg-primary/70 transition-[width] duration-300 ease-out"
+                                style={{ width: `${stepProgress}%` }}
+                              />
                             </div>
                           </div>
 
