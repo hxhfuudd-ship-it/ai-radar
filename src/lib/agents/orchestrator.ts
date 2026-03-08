@@ -68,7 +68,11 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
         completed: dedupedProjects.length,
         current: `找到 ${dedupedProjects.length} 个项目，全部已是最新`,
       });
-      return { projectsFound: dedupedProjects.length, newAnalyzed: 0 };
+      return {
+        projectsFound: dedupedProjects.length,
+        newAnalyzed: 0,
+        scannedAt: scanResult.scannedAt,
+      };
     }
 
     onProgress?.({
@@ -139,7 +143,11 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
       completed: needAnalysis.length,
     });
 
-    return { projectsFound: projects.length, newAnalyzed: needAnalysis.length };
+    return {
+      projectsFound: projects.length,
+      newAnalyzed: needAnalysis.length,
+      scannedAt: scanResult.scannedAt,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     onProgress?.({ phase: 'error', total: 0, completed: 0, error: message });

@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
 import { runFullScan } from '@/lib/agents/orchestrator';
+import { db, schema } from '@/lib/db';
+import { desc, isNotNull } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 let scanRunning = false;
+let lastScanAt: string | null = null;
 
 export async function POST(req: NextRequest) {
   if (scanRunning) {
@@ -44,10 +47,12 @@ export async function POST(req: NextRequest) {
           phase: 'done',
           total: result.projectsFound,
           completed: result.newAnalyzed,
+          scannedAt: result.scannedAt,
           current: result.newAnalyzed === 0
             ? `找到 ${result.projectsFound} 个项目，全部已是最新`
             : `新分析了 ${result.newAnalyzed} 个项目（共 ${result.projectsFound} 个）`,
         });
+        lastScanAt = result.scannedAt;
       } catch (err) {
         send({
           phase: 'error',
@@ -72,5 +77,16 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  return Response.json({ running: scanRunning });
+  const latestAnalyzed = await db
+    .select({ analyzedAt: schema.projects.analyzedAt })
+    .from(schema.projects)
+    .where(isNotNull(schema.projects.analyzedAt))
+    .orderBy(desc(schema.projects.analyzedAt))
+    .limit(1)
+    .get();
+
+  return Response.json({
+    running: scanRunning,
+    lastScanAt: lastScanAt ?? latestAnalyzed?.analyzedAt ?? null,
+  });
 }

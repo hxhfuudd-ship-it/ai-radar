@@ -10,13 +10,22 @@ interface ScanState {
   displayProgress: number;
   elapsed: number;
   showForce: boolean;
+  lastScanAt: string | null;
 }
 
 const ScanContext = createContext<{
   state: ScanState;
   startScan: (force: boolean) => void;
 }>({
-  state: { isScanning: false, phase: '', detail: '', displayProgress: 0, elapsed: 0, showForce: false },
+  state: {
+    isScanning: false,
+    phase: '',
+    detail: '',
+    displayProgress: 0,
+    elapsed: 0,
+    showForce: false,
+    lastScanAt: null,
+  },
   startScan: () => {},
 });
 
@@ -42,6 +51,27 @@ const PHASE_LABEL: Record<string, string> = {
   error: '失败',
 };
 
+const LAST_SCAN_STORAGE_KEY = 'ai-radar:last-scan-at';
+
+function formatLastScan(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+
+  const now = Date.now();
+  const diffMs = now - d.getTime();
+  const diffHours = Math.floor(diffMs / 3_600_000);
+
+  if (diffHours < 1) return '刚刚';
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  if (diffHours < 48) return '昨天';
+  return d.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 // ---- Provider ----
 export function ScanProvider({ onComplete, children }: { onComplete?: () => void; children: React.ReactNode }) {
   const [isScanning, setIsScanning] = useState(false);
@@ -50,6 +80,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   const [displayProgress, setDisplayProgress] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [showForce, setShowForce] = useState(false);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -61,6 +92,29 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   useEffect(() => () => {
     stopTimer();
     abortRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const localValue = typeof window !== 'undefined'
+      ? localStorage.getItem(LAST_SCAN_STORAGE_KEY)
+      : null;
+    if (localValue) setLastScanAt(localValue);
+
+    void fetch('/api/scan')
+      .then(res => res.json())
+      .then(data => {
+        const serverValue = typeof data?.lastScanAt === 'string' ? data.lastScanAt : null;
+        if (!serverValue) return;
+
+        setLastScanAt(prev => {
+          if (!prev) return serverValue;
+          return new Date(serverValue).getTime() > new Date(prev).getTime() ? serverValue : prev;
+        });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(LAST_SCAN_STORAGE_KEY, serverValue);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -115,6 +169,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
       let lastPhase = '';
       let lastCompleted = 0;
       let lastTotal = 0;
+      let streamScannedAt: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -140,6 +195,14 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
             if (data.phase === 'done') {
               setDisplayProgress(100);
+              if (typeof data.scannedAt === 'string' && data.scannedAt) {
+                streamScannedAt = data.scannedAt;
+              }
+              const doneAt = streamScannedAt ?? new Date().toISOString();
+              setLastScanAt(doneAt);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(LAST_SCAN_STORAGE_KEY, doneAt);
+              }
               if (data.completed === 0 && data.total > 0) setShowForce(true);
               onComplete?.();
             }
@@ -152,6 +215,11 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
       if (lastPhase !== 'done' && lastPhase !== 'error') {
         setPhase('完成');
         setDisplayProgress(100);
+        const doneAt = new Date().toISOString();
+        setLastScanAt(doneAt);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(LAST_SCAN_STORAGE_KEY, doneAt);
+        }
         onComplete?.();
       }
     } catch (err) {
@@ -165,7 +233,15 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     }
   }, [onComplete]);
 
-  const state: ScanState = { isScanning, phase, detail, displayProgress, elapsed, showForce };
+  const state: ScanState = {
+    isScanning,
+    phase,
+    detail,
+    displayProgress,
+    elapsed,
+    showForce,
+    lastScanAt,
+  };
 
   return (
     <ScanContext.Provider value={{ state, startScan }}>
@@ -194,16 +270,22 @@ export function ScanButton() {
 // ---- 进度条组件 ----
 export function ScanProgress() {
   const { state } = useContext(ScanContext);
-  const { phase, detail, displayProgress, elapsed, isScanning } = state;
+  const { phase, detail, displayProgress, elapsed, isScanning, lastScanAt } = state;
   const pct = Math.round(displayProgress);
 
-  if (!phase) return null;
+  if (!phase && !lastScanAt) return null;
 
   const isError = phase === '失败';
   const showBar = isScanning || phase === '完成';
 
   return (
     <div className="mb-4 space-y-1.5">
+      {lastScanAt ? (
+        <div className="text-xs text-muted-foreground">
+          上次扫描：{formatLastScan(lastScanAt)}
+        </div>
+      ) : null}
+      {!phase ? null : (
       <div className="flex items-center gap-2 text-sm">
         <span className={`font-semibold shrink-0 ${isError ? 'text-destructive' : 'text-primary'}`}>[{phase}]</span>
         <span className="text-muted-foreground truncate min-w-0">{detail}</span>
@@ -214,6 +296,7 @@ export function ScanProgress() {
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{pct}%</span>
         )}
       </div>
+      )}
       {showBar && (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
