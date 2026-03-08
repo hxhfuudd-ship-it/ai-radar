@@ -19,6 +19,21 @@ interface UseChatStreamOptions {
   projectContext?: Record<string, unknown>;
 }
 
+function trimText(value: unknown, maxChars: number): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  return text.length > maxChars ? `${text.slice(0, maxChars)}...` : text;
+}
+
+function buildCompactProjectContext(projectContext: Record<string, unknown>) {
+  return {
+    ...projectContext,
+    summary: trimText(projectContext.summary, 500),
+    analysis: trimText(projectContext.analysis, 1200),
+  };
+}
+
 export function useChatStream(options: UseChatStreamOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -80,14 +95,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     };
 
     try {
-      const history = messagesRef.current.map(m => ({
+      const history = messagesRef.current.slice(-8).map(m => ({
         role: m.role,
         content: m.content,
       }));
 
       const body: Record<string, unknown> = { message: msg, history };
       if (options.projectContext) {
-        body.projectContext = options.projectContext;
+        body.projectContext = buildCompactProjectContext(options.projectContext);
       }
 
       const res = await fetch('/api/chat', {

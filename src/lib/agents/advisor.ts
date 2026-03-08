@@ -9,7 +9,11 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import type { RawProject } from './types';
 
 const advisorModel = process.env.ADVISOR_MODEL || 'kimi-k2.5';
-const projectChatModel = process.env.PROJECT_CHAT_MODEL || 'glm-4.7';
+const projectChatModel =
+  process.env.PROJECT_CHAT_MODEL ||
+  process.env.CUSTOM_MODEL_FAST ||
+  'glm-4.7';
+const projectChatMaxTokens = Number(process.env.PROJECT_CHAT_MAX_TOKENS || 768);
 
 const config: AgentConfig = {
   name: 'Advisor',
@@ -201,7 +205,7 @@ async function chatAboutProject(
   emit?: AdvisorEmit,
 ): Promise<void> {
   const analysisText = project.analysis
-    ? project.analysis.slice(0, 500) + (project.analysis.length > 500 ? '...' : '')
+    ? project.analysis.slice(0, 350) + (project.analysis.length > 350 ? '...' : '')
     : '';
 
   // 只有对比/替代类问题才触发 web 搜索，普通问题直接调 LLM
@@ -236,7 +240,8 @@ async function chatAboutProject(
     messages,
     provider: config.provider,
     model: projectChatModel,
-    maxTokens: 1024,
+    maxTokens: Number.isFinite(projectChatMaxTokens) ? projectChatMaxTokens : 768,
+    tier: 'fast',
     stream: true,
   });
 
