@@ -139,6 +139,12 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   }, [isScanning, phase]);
 
   useEffect(() => {
+    if (!isScanning && phase === '完成') {
+      setDisplayProgress(100);
+    }
+  }, [isScanning, phase]);
+
+  useEffect(() => {
     if (!isScanning) return;
 
     const tick = setInterval(() => {
@@ -248,6 +254,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
             if (data.phase === 'done') {
               actualProgressRef.current = 100;
               serverTickRef.current = Date.now();
+              setDisplayProgress(100);
               if (typeof data.scannedAt === 'string' && data.scannedAt) {
                 streamScannedAt = data.scannedAt;
               }
@@ -270,6 +277,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
         rawPhaseRef.current = 'done';
         actualProgressRef.current = 100;
         serverTickRef.current = Date.now();
+        setDisplayProgress(100);
         const doneAt = new Date().toISOString();
         setLastScanAt(doneAt);
         if (typeof window !== 'undefined') {
