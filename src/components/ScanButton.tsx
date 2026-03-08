@@ -72,6 +72,14 @@ function formatLastScan(iso: string): string {
   });
 }
 
+function phaseSoftCap(phase: string): number {
+  if (phase === 'scouting') return 14;
+  if (phase === 'fetching') return 34;
+  if (phase === 'analyzing') return 96;
+  if (phase === 'done') return 100;
+  return 6;
+}
+
 // ---- Provider ----
 export function ScanProvider({ onComplete, children }: { onComplete?: () => void; children: React.ReactNode }) {
   const [isScanning, setIsScanning] = useState(false);
@@ -84,6 +92,9 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const rawPhaseRef = useRef('');
+  const actualProgressRef = useRef(0);
+  const serverTickRef = useRef(0);
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -127,6 +138,42 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     }
   }, [isScanning, phase]);
 
+  useEffect(() => {
+    if (!isScanning) return;
+
+    const tick = setInterval(() => {
+      const rawPhase = rawPhaseRef.current;
+      const actual = actualProgressRef.current;
+      const idleMs = Date.now() - serverTickRef.current;
+      let target = actual;
+
+      if (rawPhase !== 'done' && rawPhase !== 'error') {
+        const cap = phaseSoftCap(rawPhase);
+        if (idleMs > 700 && actual < cap) {
+          const optimistic = Math.min(cap, actual + (idleMs - 700) / 240);
+          target = Math.max(target, optimistic);
+        }
+      } else if (rawPhase === 'done') {
+        target = 100;
+      }
+
+      setDisplayProgress(prev => {
+        const delta = target - prev;
+        if (Math.abs(delta) < 0.15) return target;
+
+        const easedStep = rawPhase === 'done'
+          ? Math.max(1.2, delta * 0.35)
+          : delta > 0
+            ? Math.max(0.2, delta * 0.18)
+            : delta * 0.25;
+
+        return Math.min(100, Math.max(0, prev + easedStep));
+      });
+    }, 120);
+
+    return () => clearInterval(tick);
+  }, [isScanning]);
+
   const startScan = useCallback(async (force: boolean) => {
     startTimeRef.current = Date.now();
     setIsScanning(true);
@@ -134,6 +181,9 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     setPhase('启动中');
     setDetail('正在启动扫描...');
     setDisplayProgress(3);
+    rawPhaseRef.current = 'scouting';
+    actualProgressRef.current = 3;
+    serverTickRef.current = Date.now();
     setElapsed(0);
 
     timerRef.current = setInterval(() => setElapsed(Date.now() - startTimeRef.current), 1000);
@@ -186,15 +236,18 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
             const label = PHASE_LABEL[data.phase] ?? data.phase;
             setPhase(label);
             setDetail(data.current || data.error || '');
+            rawPhaseRef.current = data.phase ?? '';
             lastPhase = data.phase;
             lastCompleted = data.completed ?? 0;
             lastTotal = data.total ?? 0;
 
             const pct = phaseToProgress(data.phase, lastTotal, lastCompleted);
-            setDisplayProgress(pct);
+            actualProgressRef.current = pct;
+            serverTickRef.current = Date.now();
 
             if (data.phase === 'done') {
-              setDisplayProgress(100);
+              actualProgressRef.current = 100;
+              serverTickRef.current = Date.now();
               if (typeof data.scannedAt === 'string' && data.scannedAt) {
                 streamScannedAt = data.scannedAt;
               }
@@ -214,7 +267,9 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
       if (lastPhase !== 'done' && lastPhase !== 'error') {
         setPhase('完成');
-        setDisplayProgress(100);
+        rawPhaseRef.current = 'done';
+        actualProgressRef.current = 100;
+        serverTickRef.current = Date.now();
         const doneAt = new Date().toISOString();
         setLastScanAt(doneAt);
         if (typeof window !== 'undefined') {
@@ -303,7 +358,7 @@ export function ScanProgress() {
             className="h-full rounded-full bg-gradient-to-r from-primary/80 to-primary"
             style={{
               width: `${displayProgress}%`,
-              transition: 'width 0.4s ease-out',
+              transition: 'width 0.18s linear',
             }}
           />
         </div>

@@ -83,22 +83,28 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     });
 
     const readmeMap = new Map<string, string>();
+    let fetched = 0;
     const README_BATCH = 8;
     for (let i = 0; i < needAnalysis.length; i += README_BATCH) {
       const batch = needAnalysis.slice(i, i + README_BATCH);
-      const results = await Promise.allSettled(
-        batch.map(p => getRepoReadme(p.fullName))
+      await Promise.all(
+        batch.map(async (project) => {
+          try {
+            const readme = await getRepoReadme(project.fullName);
+            readmeMap.set(project.fullName, readme);
+          } catch {
+            readmeMap.set(project.fullName, '');
+          }
+
+          fetched += 1;
+          onProgress?.({
+            phase: 'fetching',
+            total: needAnalysis.length,
+            completed: fetched,
+            current: `已获取 ${fetched}/${needAnalysis.length} 个 README`,
+          });
+        })
       );
-      results.forEach((r, idx) => {
-        readmeMap.set(batch[idx].fullName, r.status === 'fulfilled' ? r.value : '');
-      });
-      const fetched = Math.min(i + README_BATCH, needAnalysis.length);
-      onProgress?.({
-        phase: 'fetching',
-        total: needAnalysis.length,
-        completed: fetched,
-        current: `已获取 ${fetched}/${needAnalysis.length} 个 README`,
-      });
     }
 
     onProgress?.({
@@ -118,23 +124,27 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
         phase: 'analyzing',
         total: needAnalysis.length,
         completed,
-        current: names,
+        current: `正在分析：${names}`,
       });
 
-      const results = await Promise.allSettled(
-        batch.map(project => {
-          const readme = readmeMap.get(project.fullName) ?? '';
-          return processProject(project, scanResult.scannedAt, readme);
+      await Promise.all(
+        batch.map(async (project) => {
+          try {
+            const readme = readmeMap.get(project.fullName) ?? '';
+            await processProject(project, scanResult.scannedAt, readme);
+          } catch (err) {
+            console.error(`Failed: ${project.fullName}`, err);
+          } finally {
+            completed += 1;
+            onProgress?.({
+              phase: 'analyzing',
+              total: needAnalysis.length,
+              completed,
+              current: `已完成 ${completed}/${needAnalysis.length}：${project.name}`,
+            });
+          }
         })
       );
-
-      for (let j = 0; j < results.length; j++) {
-        if (results[j].status === 'rejected') {
-          console.error(`Failed: ${batch[j].fullName}`, (results[j] as PromiseRejectedResult).reason);
-        }
-      }
-
-      completed += batch.length;
     }
 
     onProgress?.({
