@@ -55,7 +55,7 @@ export function getProviderConfig(provider: LLMProvider): ProviderConfig {
 }
 
 export const defaultProvider: LLMProvider =
-  (env('DEFAULT_PROVIDER', 'dashscope') as LLMProvider);
+  (env('DEFAULT_PROVIDER', 'custom') as LLMProvider);
 
 export const APP_CONFIG = {
   scanIntervalHours: 12,

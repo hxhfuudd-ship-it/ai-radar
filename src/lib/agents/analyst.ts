@@ -6,7 +6,7 @@ const config: AgentConfig = {
   name: 'Analyst',
   role: '技术分析师',
   provider: 'custom',
-  model: process.env.ANALYST_MODEL || 'doubao-seed-2.0-code',
+  model: process.env.ANALYST_MODEL || 'deepseek-v3.2',
   systemPrompt: '你是 AI Radar 的技术分析师。',
 };
 

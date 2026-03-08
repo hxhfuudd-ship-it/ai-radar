@@ -9,7 +9,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import type { RawProject } from './types';
 
 const advisorModel = process.env.ADVISOR_MODEL || 'kimi-k2.5';
-const projectChatModel = process.env.PROJECT_CHAT_MODEL || 'glm-4.7';
+const projectChatModel = process.env.PROJECT_CHAT_MODEL || 'doubao-seed-2.0-code';
 
 const config: AgentConfig = {
   name: 'Advisor',
