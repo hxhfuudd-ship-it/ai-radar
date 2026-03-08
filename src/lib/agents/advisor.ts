@@ -50,7 +50,7 @@ export interface AdvisorResponse {
   status?: string;
 }
 
-export type AdvisorEmit = (response: AdvisorResponse) => void;
+export type AdvisorEmit = (response: AdvisorResponse) => void | Promise<void>;
 
 export interface ProjectContext {
   fullName: string;
@@ -191,7 +191,7 @@ export async function chatWithAdvisor(
     stream: true,
   });
 
-  emit?.({ type: 'stream', stream });
+  await emit?.({ type: 'stream', stream });
 }
 
 async function chatAboutProject(
@@ -238,7 +238,7 @@ async function chatAboutProject(
     stream: true,
   });
 
-  emit?.({ type: 'stream', stream });
+  await emit?.({ type: 'stream', stream });
 }
 
 async function findProjectByName(name: string, cachedProjects: { fullName: string; [k: string]: unknown }[]) {
