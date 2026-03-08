@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useDeferredValue } from 'react';
-import { Search, X, Radar } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { ProjectCard } from '@/components/ProjectCard';
 import { ScanProvider, ScanButton, ScanProgress } from '@/components/ScanButton';
+import { BrandLogo } from '@/components/BrandLogo';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -135,7 +136,7 @@ export default function HomePage() {
       ) : projects.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-muted-foreground">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-            <Radar className="h-8 w-8" />
+            <BrandLogo size={32} className="h-8 w-8" decorative />
           </div>
           <p className="text-lg font-medium">还没有项目数据</p>
           <p className="mt-2 text-sm">

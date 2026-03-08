@@ -3,12 +3,17 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Radar, Bookmark, MessageCircle, Menu, X } from 'lucide-react';
+import { Bookmark, MessageCircle, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { BrandLogo } from '@/components/BrandLogo';
+
+function DiscoverIcon({ className }: { className?: string }) {
+  return <BrandLogo size={16} className={cn('h-4 w-4 rounded', className)} decorative />;
+}
 
 const navItems = [
-  { href: '/', label: '发现', icon: Radar },
+  { href: '/', label: '发现', icon: DiscoverIcon },
   { href: '/bookmarks', label: '收藏', icon: Bookmark },
   { href: '/chat', label: '对话', icon: MessageCircle },
 ];
@@ -24,9 +29,7 @@ export function Navbar() {
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-[env(safe-area-inset-top,0px)]">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 font-bold" onClick={() => setMobileOpen(false)}>
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Radar className="h-4 w-4" />
-          </div>
+          <BrandLogo size={28} className="h-7 w-7" decorative />
           <span className="text-lg">AI Radar</span>
         </Link>
 

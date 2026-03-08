@@ -4,8 +4,8 @@
   "description": "自动追踪 GitHub 上最新的 AI 项目、技术动态",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#e9f6ff",
+  "theme_color": "#63b9ff",
   "orientation": "portrait-primary",
   "icons": [
     {

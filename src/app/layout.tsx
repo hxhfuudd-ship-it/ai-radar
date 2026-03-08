@@ -19,13 +19,18 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0a0a0a',
+  themeColor: '#63b9ff',
 };
 
 export const metadata: Metadata = {
   title: 'AI Radar — 个人 AI 技术雷达',
   description: '自动追踪 GitHub 上最新的 AI 项目、技术动态',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/icons/logo-mark.svg',
+    shortcut: '/icons/logo-mark.svg',
+    apple: '/icons/logo-mark.svg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

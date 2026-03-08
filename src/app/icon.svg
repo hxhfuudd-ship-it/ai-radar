@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="bg512" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bgicon" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
       <stop stop-color="#AEE9FF" />
       <stop offset="1" stop-color="#4F9DFF" />
     </linearGradient>
-    <radialGradient id="glow512" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(40 30) rotate(45) scale(54)">
+    <radialGradient id="glowicon" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(40 30) rotate(45) scale(54)">
       <stop stop-color="#FFFFFF" stop-opacity="0.55" />
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
     </radialGradient>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg512)" />
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#glow512)" />
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bgicon)" />
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#glowicon)" />
   <g transform="translate(64 64)">
     <circle cx="0" cy="0" r="7" fill="#FFFFFF" />
     <circle cx="0" cy="0" r="21" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-opacity="0.78" />
