@@ -64,6 +64,21 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     ]);
     setIsLoading(true);
 
+    let accumulated = '';
+    let rafId: number | null = null;
+
+    const flushContent = () => {
+      rafId = null;
+      setMessages(prev => {
+        const updated = [...prev];
+        const idx = updated.findIndex(m => m.id === assistantId);
+        if (idx >= 0) {
+          updated[idx] = { ...updated[idx], content: accumulated, status: undefined };
+        }
+        return updated;
+      });
+    };
+
     try {
       const history = messagesRef.current.map(m => ({
         role: m.role,
@@ -87,20 +102,23 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       const decoder = new TextDecoder();
       if (!reader) throw new Error('No reader');
 
-      let accumulated = '';
+      let sseBuffer = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() ?? '';
 
         for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') break;
           try {
             const parsed = JSON.parse(data);
             if (parsed.status) {
+              if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
               setMessages(prev => {
                 const updated = [...prev];
                 const idx = updated.findIndex(m => m.id === assistantId);
@@ -112,14 +130,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             }
             if (parsed.content) {
               accumulated += parsed.content;
-              setMessages(prev => {
-                const updated = [...prev];
-                const idx = updated.findIndex(m => m.id === assistantId);
-                if (idx >= 0) {
-                  updated[idx] = { ...updated[idx], content: accumulated, status: undefined };
-                }
-                return updated;
-              });
+              if (!rafId) {
+                rafId = requestAnimationFrame(flushContent);
+              }
             }
           } catch {
             // skip malformed chunks
@@ -127,24 +140,16 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         }
       }
     } catch {
-      setMessages(prev => {
-        const updated = [...prev];
-        const idx = updated.findIndex(m => m.id === assistantId);
-        if (idx >= 0) {
-          updated[idx] = {
-            ...updated[idx],
-            content: '抱歉，出现了错误。请稍后重试。',
-            done: true,
-          };
-        }
-        return updated;
-      });
+      if (!accumulated) {
+        accumulated = '抱歉，出现了错误。请稍后重试。';
+      }
     } finally {
+      if (rafId) cancelAnimationFrame(rafId);
       setMessages(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(m => m.id === assistantId);
         if (idx >= 0) {
-          updated[idx] = { ...updated[idx], done: true };
+          updated[idx] = { ...updated[idx], content: accumulated, done: true };
         }
         return updated;
       });

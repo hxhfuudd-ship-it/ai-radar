@@ -25,13 +25,11 @@ export function ChatPanel() {
     input,
     setInput,
     isLoading,
+    elapsed,
     scrollRef,
     sendMessage,
     handleKeyDown,
   } = useChatStream();
-
-  const lastMsg = messages[messages.length - 1];
-  const isWaiting = isLoading && lastMsg?.role === 'assistant' && lastMsg.content === '';
 
   const suggestionButtons = useMemo(() => (
     <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -70,38 +68,42 @@ export function ChatPanel() {
                     : 'bg-muted'
                 }`}
               >
-                {msg.status ? (
-                  <div className="mb-1.5 flex items-center gap-1.5 text-xs text-primary">
-                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
-                    {msg.status}
-                  </div>
-                ) : null}
-                {msg.role === 'assistant' && msg.content ? (
-                  msg.done ? (
-                    <MarkdownContent content={msg.content} className="text-sm" />
-                  ) : (
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {msg.content}
-                      <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-middle" />
+                {msg.role === 'assistant' ? (
+                  msg.content ? (
+                    <div className={msg.done ? '' : 'content-appear'}>
+                      <MarkdownContent
+                        content={msg.content}
+                        className="text-sm"
+                        isStreaming={!msg.done}
+                      />
                     </div>
-                  )
+                  ) : !msg.done ? (
+                    <div className="space-y-2.5 py-0.5">
+                      {msg.status ? (
+                        <div className="flex items-center gap-1.5 text-xs text-primary">
+                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+                          {msg.status}
+                        </div>
+                      ) : null}
+                      <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                        <div className="flex gap-1">
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                        </div>
+                        <span>AI 正在思考{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
+                      </div>
+                      <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
+                        <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
+                      </div>
+                    </div>
+                  ) : null
                 ) : (
                   <div className="text-sm">{msg.content}</div>
                 )}
               </Card>
             </div>
           ))}
-          {isWaiting ? (
-            <div className="flex justify-start">
-              <Card className="bg-muted px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="animate-bounce">·</span>
-                  <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>·</span>
-                  <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>·</span>
-                </div>
-              </Card>
-            </div>
-          ) : null}
         </div>
       </ScrollArea>
       <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4">

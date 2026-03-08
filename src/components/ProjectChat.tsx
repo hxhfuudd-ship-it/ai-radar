@@ -62,9 +62,6 @@ export function ProjectChat({ project }: ProjectChatProps) {
     );
   }
 
-  const lastMsg = messages[messages.length - 1];
-  const isWaiting = isLoading && lastMsg?.role === 'assistant' && lastMsg.content === '';
-
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b px-5 py-3">
@@ -111,31 +108,42 @@ export function ProjectChat({ project }: ProjectChatProps) {
                     : 'bg-muted'
                 }`}
               >
-                {msg.role === 'assistant' && msg.content ? (
-                  msg.done ? (
-                    <MarkdownContent content={msg.content} className="text-sm" />
-                  ) : (
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {msg.content}
-                      <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-middle" />
+                {msg.role === 'assistant' ? (
+                  msg.content ? (
+                    <div className={msg.done ? '' : 'content-appear'}>
+                      <MarkdownContent
+                        content={msg.content}
+                        className="text-sm"
+                        isStreaming={!msg.done}
+                      />
                     </div>
-                  )
+                  ) : !msg.done ? (
+                    <div className="space-y-2 py-0.5">
+                      {msg.status ? (
+                        <div className="flex items-center gap-1.5 text-xs text-primary">
+                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+                          {msg.status}
+                        </div>
+                      ) : null}
+                      <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                        <div className="flex gap-1">
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                        </div>
+                        <span>AI 正在思考{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
+                      </div>
+                      <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
+                        <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
+                      </div>
+                    </div>
+                  ) : null
                 ) : (
                   <div className="text-sm leading-relaxed">{msg.content}</div>
                 )}
               </div>
             </div>
           ))}
-          {isWaiting ? (
-            <div className="flex justify-start">
-              <div className="rounded-lg bg-muted px-3.5 py-2.5">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
-                  AI 正在思考{elapsed > 0 ? `（${elapsed}s）` : '...'}
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
 

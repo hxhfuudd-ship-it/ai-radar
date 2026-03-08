@@ -4,14 +4,18 @@ import { desc, like, or, eq } from 'drizzle-orm';
 import { chat, chatStream, systemMessage, userMessage } from '../llm';
 import { getRepoReadme } from '../mcp/github/tools';
 import { analyzeProject } from './analyst';
+import { webSearch, detectWebSearchNeed, detectProjectChatSearch } from '../search';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { RawProject } from './types';
+
+const advisorModel = process.env.ADVISOR_MODEL || 'kimi-k2.5';
+const projectChatModel = process.env.PROJECT_CHAT_MODEL || 'glm-4.7';
 
 const config: AgentConfig = {
   name: 'Advisor',
   role: '个人顾问',
   provider: 'custom',
-  model: 'kimi-k2.5',
+  model: advisorModel,
   systemPrompt: `你是 AI Radar 的个人技术顾问。你帮助用户了解最新的 AI 技术动态。
 
 你的知识库中有用户收集的 AI 项目数据。当用户提问时：
@@ -84,25 +88,35 @@ export async function chatWithAdvisor(
   let targetProjects: string[] = [];
   let task = '无';
 
-  try {
-    const routerResult = await chat({
-      messages: [
-        systemMessage(routerPrompt),
-        userMessage(`用户问题：${userInput}\n\n知识库中相关项目：${context.map(p => `${p.fullName} - ${p.summary?.slice(0, 80)}`).join('\n')}`),
-      ],
-      provider: config.provider,
-      model: config.model,
-      maxTokens: 256,
-      temperature: 0.1,
-    });
+  const ANALYST_KEYWORDS = /对比|比较|区别|VS|vs|优劣|分析一下|深度分析|详细分析|技术细节|源码|架构分析/;
+  const inputLower = userInput.toLowerCase();
+  const hasProjectMention = context.some(p =>
+    inputLower.includes(p.name.toLowerCase()) ||
+    inputLower.includes(p.fullName.toLowerCase())
+  );
+  const shouldRoute = ANALYST_KEYWORDS.test(userInput) && hasProjectMention;
 
-    const cleaned = routerResult.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
-    needAnalyst = parsed.needAnalyst === true;
-    targetProjects = parsed.projectNames ?? [];
-    task = parsed.task ?? '无';
-  } catch {
-    // 路由判断失败，走普通流程
+  if (shouldRoute) {
+    try {
+      const routerResult = await chat({
+        messages: [
+          systemMessage(routerPrompt),
+          userMessage(`用户问题：${userInput}\n\n知识库中相关项目：${context.map(p => `${p.fullName} - ${p.summary?.slice(0, 80)}`).join('\n')}`),
+        ],
+        provider: config.provider,
+        tier: 'fast',
+        maxTokens: 128,
+        temperature: 0.1,
+      });
+
+      const cleaned = routerResult.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      needAnalyst = parsed.needAnalyst === true;
+      targetProjects = parsed.projectNames ?? [];
+      task = parsed.task ?? '无';
+    } catch {
+      // 路由判断失败，走普通流程
+    }
   }
 
   let analystReport = '';
@@ -145,6 +159,16 @@ export async function chatWithAdvisor(
     }
   }
 
+  let webContext = '';
+  const searchQuery = detectWebSearchNeed(userInput, context.map(p => p.name));
+  if (searchQuery) {
+    responses.push({ type: 'status', status: '正在搜索网络资料...' });
+    const searchResult = await webSearch(searchQuery);
+    if (searchResult) {
+      webContext = `\n\n以下是从网络搜索获取的补充资料：\n${searchResult}`;
+    }
+  }
+
   responses.push({ type: 'status', status: '顾问正在组织回答...' });
 
   const contextText = context.length > 0
@@ -154,7 +178,7 @@ export async function chatWithAdvisor(
     : '';
 
   const messages: ChatCompletionMessageParam[] = [
-    systemMessage(config.systemPrompt + contextText + analystReport),
+    systemMessage(config.systemPrompt + contextText + analystReport + webContext),
     ...history.slice(-10),
     userMessage(userInput),
   ];
@@ -181,6 +205,16 @@ async function chatAboutProject(
     ? project.analysis.slice(0, 2000) + (project.analysis.length > 2000 ? '...' : '')
     : '';
 
+  let webContext = '';
+  const searchQuery = detectProjectChatSearch(userInput, project.fullName);
+  if (searchQuery) {
+    responses.push({ type: 'status', status: '正在搜索网络资料...' });
+    const searchResult = await webSearch(searchQuery);
+    if (searchResult) {
+      webContext = `\n\n--- 网络搜索补充资料 ---\n${searchResult}`;
+    }
+  }
+
   const projectInfo = [
     `项目：${project.fullName}`,
     `链接：${project.url}`,
@@ -193,7 +227,7 @@ async function chatAboutProject(
   ].filter(Boolean).join('\n');
 
   const messages: ChatCompletionMessageParam[] = [
-    systemMessage(`${projectChatPrompt}\n\n--- 当前项目信息 ---\n${projectInfo}`),
+    systemMessage(`${projectChatPrompt}\n\n--- 当前项目信息 ---\n${projectInfo}${webContext}`),
     ...history.slice(-10),
     userMessage(userInput),
   ];
@@ -201,7 +235,7 @@ async function chatAboutProject(
   const stream = await chatStream({
     messages,
     provider: config.provider,
-    model: config.model,
+    model: projectChatModel,
     stream: true,
   });
 
