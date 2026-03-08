@@ -201,14 +201,19 @@ async function chatAboutProject(
   emit?: AdvisorEmit,
 ): Promise<void> {
   const analysisText = project.analysis
-    ? project.analysis.slice(0, 1000) + (project.analysis.length > 1000 ? '...' : '')
+    ? project.analysis.slice(0, 500) + (project.analysis.length > 500 ? '...' : '')
     : '';
 
-  // Web 搜索与 LLM 调用并行：先构建 prompt，同时发起搜索
+  // 只有对比/替代类问题才触发 web 搜索，普通问题直接调 LLM
   const searchQuery = detectProjectChatSearch(userInput, project.fullName);
-  const searchPromise = searchQuery
-    ? (emit?.({ type: 'status', status: '正在搜索网络资料...' }), webSearch(searchQuery))
-    : Promise.resolve('');
+  let webContext = '';
+  if (searchQuery) {
+    emit?.({ type: 'status', status: '正在搜索网络资料...' });
+    const searchResult = await webSearch(searchQuery);
+    if (searchResult) {
+      webContext = `\n\n--- 网络搜索补充资料 ---\n${searchResult}`;
+    }
+  }
 
   const projectInfo = [
     `项目：${project.fullName}`,
@@ -221,9 +226,6 @@ async function chatAboutProject(
     analysisText && `\n深度分析报告：\n${analysisText}`,
   ].filter(Boolean).join('\n');
 
-  const webResult = await searchPromise;
-  const webContext = webResult ? `\n\n--- 网络搜索补充资料 ---\n${webResult}` : '';
-
   const messages: ChatCompletionMessageParam[] = [
     systemMessage(`${projectChatPrompt}\n\n--- 当前项目信息 ---\n${projectInfo}${webContext}`),
     ...history.slice(-6),
@@ -234,7 +236,7 @@ async function chatAboutProject(
     messages,
     provider: config.provider,
     model: projectChatModel,
-    maxTokens: 2048,
+    maxTokens: 1024,
     stream: true,
   });
 
