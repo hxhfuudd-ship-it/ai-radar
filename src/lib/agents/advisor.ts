@@ -50,6 +50,8 @@ export interface AdvisorResponse {
   status?: string;
 }
 
+export type AdvisorEmit = (response: AdvisorResponse) => void;
+
 export interface ProjectContext {
   fullName: string;
   url: string;
@@ -75,11 +77,10 @@ export async function chatWithAdvisor(
   userInput: string,
   history: ChatCompletionMessageParam[] = [],
   projectContext?: ProjectContext,
-): Promise<AdvisorResponse[]> {
-  const responses: AdvisorResponse[] = [];
-
+  emit?: AdvisorEmit,
+): Promise<void> {
   if (projectContext) {
-    return chatAboutProject(userInput, history, projectContext, responses);
+    return chatAboutProject(userInput, history, projectContext, emit);
   }
 
   const context = await searchRelevantProjects(userInput);
@@ -121,7 +122,7 @@ export async function chatWithAdvisor(
 
   let analystReport = '';
   if (needAnalyst && targetProjects.length > 0) {
-    responses.push({ type: 'status', status: `正在调用分析师分析 ${targetProjects.join(', ')}...` });
+    emit?.({ type: 'status', status: `正在调用分析师分析 ${targetProjects.join(', ')}...` });
 
     const reports: string[] = [];
     for (const name of targetProjects.slice(0, 3)) {
@@ -129,7 +130,7 @@ export async function chatWithAdvisor(
         const project = await findProjectByName(name, context);
         if (!project) continue;
 
-        responses.push({ type: 'status', status: `分析师正在分析 ${name}...` });
+        emit?.({ type: 'status', status: `分析师正在分析 ${name}...` });
 
         const readme = await getRepoReadme(name);
         const raw: RawProject = {
@@ -162,14 +163,14 @@ export async function chatWithAdvisor(
   let webContext = '';
   const searchQuery = detectWebSearchNeed(userInput, context.map(p => p.name));
   if (searchQuery) {
-    responses.push({ type: 'status', status: '正在搜索网络资料...' });
+    emit?.({ type: 'status', status: '正在搜索网络资料...' });
     const searchResult = await webSearch(searchQuery);
     if (searchResult) {
       webContext = `\n\n以下是从网络搜索获取的补充资料：\n${searchResult}`;
     }
   }
 
-  responses.push({ type: 'status', status: '顾问正在组织回答...' });
+  emit?.({ type: 'status', status: '顾问正在组织回答...' });
 
   const contextText = context.length > 0
     ? `\n\n以下是知识库中的相关项目：\n${context.map(p =>
@@ -190,30 +191,24 @@ export async function chatWithAdvisor(
     stream: true,
   });
 
-  responses.push({ type: 'stream', stream });
-
-  return responses;
+  emit?.({ type: 'stream', stream });
 }
 
 async function chatAboutProject(
   userInput: string,
   history: ChatCompletionMessageParam[],
   project: ProjectContext,
-  responses: AdvisorResponse[],
-): Promise<AdvisorResponse[]> {
+  emit?: AdvisorEmit,
+): Promise<void> {
   const analysisText = project.analysis
-    ? project.analysis.slice(0, 2000) + (project.analysis.length > 2000 ? '...' : '')
+    ? project.analysis.slice(0, 1000) + (project.analysis.length > 1000 ? '...' : '')
     : '';
 
-  let webContext = '';
+  // Web 搜索与 LLM 调用并行：先构建 prompt，同时发起搜索
   const searchQuery = detectProjectChatSearch(userInput, project.fullName);
-  if (searchQuery) {
-    responses.push({ type: 'status', status: '正在搜索网络资料...' });
-    const searchResult = await webSearch(searchQuery);
-    if (searchResult) {
-      webContext = `\n\n--- 网络搜索补充资料 ---\n${searchResult}`;
-    }
-  }
+  const searchPromise = searchQuery
+    ? (emit?.({ type: 'status', status: '正在搜索网络资料...' }), webSearch(searchQuery))
+    : Promise.resolve('');
 
   const projectInfo = [
     `项目：${project.fullName}`,
@@ -226,9 +221,12 @@ async function chatAboutProject(
     analysisText && `\n深度分析报告：\n${analysisText}`,
   ].filter(Boolean).join('\n');
 
+  const webResult = await searchPromise;
+  const webContext = webResult ? `\n\n--- 网络搜索补充资料 ---\n${webResult}` : '';
+
   const messages: ChatCompletionMessageParam[] = [
     systemMessage(`${projectChatPrompt}\n\n--- 当前项目信息 ---\n${projectInfo}${webContext}`),
-    ...history.slice(-10),
+    ...history.slice(-6),
     userMessage(userInput),
   ];
 
@@ -236,11 +234,11 @@ async function chatAboutProject(
     messages,
     provider: config.provider,
     model: projectChatModel,
+    maxTokens: 2048,
     stream: true,
   });
 
-  responses.push({ type: 'stream', stream });
-  return responses;
+  emit?.({ type: 'stream', stream });
 }
 
 async function findProjectByName(name: string, cachedProjects: { fullName: string; [k: string]: unknown }[]) {
