@@ -204,6 +204,8 @@ async function chatAboutProject(
   project: ProjectContext,
   emit?: AdvisorEmit,
 ): Promise<void> {
+  emit?.({ type: 'status', status: '正在理解你的问题...' });
+
   const analysisText = project.analysis
     ? project.analysis.slice(0, 350) + (project.analysis.length > 350 ? '...' : '')
     : '';
@@ -218,6 +220,8 @@ async function chatAboutProject(
       webContext = `\n\n--- 网络搜索补充资料 ---\n${searchResult}`;
     }
   }
+
+  emit?.({ type: 'status', status: '正在整理项目上下文...' });
 
   const projectInfo = [
     `项目：${project.fullName}`,
@@ -235,6 +239,8 @@ async function chatAboutProject(
     ...history.slice(-6),
     userMessage(userInput),
   ];
+
+  emit?.({ type: 'status', status: '正在生成回答草稿...' });
 
   const stream = await chatStream({
     messages,

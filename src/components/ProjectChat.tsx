@@ -20,6 +20,24 @@ const QUICK_QUESTIONS = [
   '有哪些类似的替代方案？',
 ];
 
+const PROJECT_LOADING_STEPS = [
+  { title: '理解问题', hint: '识别你关注的是场景、架构还是对比' },
+  { title: '补充资料', hint: '必要时检索外部信息做交叉参考' },
+  { title: '整理上下文', hint: '结合项目摘要、分析和历史对话' },
+  { title: '生成回答', hint: '组织重点并准备可执行建议' },
+];
+
+function resolveProjectStep(status: string | undefined, elapsed: number): number {
+  if (status?.includes('理解')) return 0;
+  if (status?.includes('搜索') || status?.includes('资料')) return 1;
+  if (status?.includes('整理') || status?.includes('上下文')) return 2;
+  if (status?.includes('生成') || status?.includes('草稿')) return 3;
+  if (elapsed < 3) return 0;
+  if (elapsed < 8) return 1;
+  if (elapsed < 15) return 2;
+  return 3;
+}
+
 interface ProjectChatProps {
   project: ProjectContext;
 }
@@ -97,52 +115,93 @@ export function ProjectChat({ project }: ProjectChatProps) {
             </div>
           ) : null}
           {messages.map(msg => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${
-                  msg.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}
-              >
-                {msg.role === 'assistant' ? (
-                  msg.content ? (
-                    <div className={msg.done ? '' : 'content-appear'}>
-                      <MarkdownContent
-                        content={msg.content}
-                        className="text-sm"
-                        isStreaming={!msg.done}
-                      />
-                    </div>
-                  ) : !msg.done ? (
-                    <div className="space-y-2 py-0.5">
-                      {msg.status ? (
-                        <div className="flex items-center gap-1.5 text-xs text-primary">
-                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
-                          {msg.status}
+            (() => {
+              const currentStep = resolveProjectStep(msg.status, elapsed);
+              const liveStatus = msg.status ?? `${PROJECT_LOADING_STEPS[currentStep].title}中...`;
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${
+                      msg.role === 'user'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    {msg.role === 'assistant' ? (
+                      msg.content ? (
+                        <div className={msg.done ? '' : 'content-appear'}>
+                          <MarkdownContent
+                            content={msg.content}
+                            className="text-sm"
+                            isStreaming={!msg.done}
+                          />
                         </div>
-                      ) : null}
-                      <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                        <div className="flex gap-1">
-                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
-                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
-                          <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                      ) : !msg.done ? (
+                        <div className="space-y-2.5 py-1">
+                          <div className="flex items-center gap-2 text-xs text-primary">
+                            <span className="thinking-orbit inline-flex h-2.5 w-2.5 rounded-full bg-primary/90" />
+                            <span>{liveStatus}</span>
+                          </div>
+
+                          <div className="rounded-md border border-primary/20 bg-background/60 px-2.5 py-2">
+                            <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                              <div className="flex gap-1">
+                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                              </div>
+                              <span>AI 正在处理{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {PROJECT_LOADING_STEPS.map((step, idx) => (
+                                <div key={step.title} className="flex items-start gap-2">
+                                  <span
+                                    className={`mt-0.5 inline-block h-1.5 w-1.5 rounded-full ${
+                                      idx < currentStep
+                                        ? 'bg-primary/80'
+                                        : idx === currentStep
+                                          ? 'thinking-pulse bg-primary'
+                                          : 'bg-muted-foreground/35'
+                                    }`}
+                                  />
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`text-[11px] leading-tight ${
+                                        idx === currentStep
+                                          ? 'text-foreground'
+                                          : 'text-muted-foreground'
+                                      }`}
+                                    >
+                                      {step.title}
+                                    </p>
+                                    {idx === currentStep ? (
+                                      <p className="text-[10px] text-muted-foreground/90">
+                                        {step.hint}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
+                            <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
+                          </div>
                         </div>
-                        <span>AI 正在思考{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
-                      </div>
-                      <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
-                        <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
-                      </div>
-                    </div>
-                  ) : null
-                ) : (
-                  <div className="text-sm leading-relaxed">{msg.content}</div>
-                )}
-              </div>
-            </div>
+                      ) : null
+                    ) : (
+                      <div className="text-sm leading-relaxed">{msg.content}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
           ))}
         </div>
       </div>
