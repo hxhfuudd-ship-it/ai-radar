@@ -35,6 +35,7 @@ yarn-error.log*
 
 # data
 /data/
+/CODEX_MEMORY.md
 
 # IDE
 .cursor/
