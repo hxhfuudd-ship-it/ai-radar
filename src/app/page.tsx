@@ -8,22 +8,36 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { Project } from '@/lib/db/schema';
+
+type ProjectSortMode = 'hot' | 'recommended';
 
 export default function HomePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sortMode, setSortMode] = useState<ProjectSortMode>('hot');
   const [loading, setLoading] = useState(true);
   const deferredSearch = useDeferredValue(search);
   const initialLoadRef = useRef(true);
+  const previousModeRef = useRef<ProjectSortMode>('hot');
 
-  const fetchProjects = useCallback(async (tag: string | null, q: string) => {
+  const fetchTags = useCallback(async (mode: ProjectSortMode) => {
+    const res = await fetch(`/api/tags?mode=${mode}`);
+    const data = await res.json();
+    const nextTags = (data.tags ?? []).map((t: { name: string }) => t.name);
+    setTags(nextTags);
+    setSelectedTag(current => (current && !nextTags.includes(current) ? null : current));
+  }, []);
+
+  const fetchProjects = useCallback(async (tag: string | null, q: string, mode: ProjectSortMode) => {
     try {
       const params = new URLSearchParams();
       if (tag) params.set('tag', tag);
       if (q) params.set('search', q);
+      params.set('mode', mode);
       const res = await fetch(`/api/projects?${params}`);
       const data = await res.json();
       setProjects(data.projects ?? []);
@@ -35,12 +49,10 @@ export default function HomePage() {
   useEffect(() => {
     async function init() {
       try {
-        const [, tagsRes] = await Promise.all([
-          fetchProjects(null, ''),
-          fetch('/api/tags'),
+        await Promise.all([
+          fetchProjects(null, '', 'hot'),
+          fetchTags('hot'),
         ]);
-        const tagsData = await tagsRes.json();
-        setTags((tagsData.tags ?? []).map((t: { name: string }) => t.name));
       } catch {
         // API 失败时仍然结束加载状态
       } finally {
@@ -48,7 +60,7 @@ export default function HomePage() {
       }
     }
     init();
-  }, [fetchProjects]);
+  }, [fetchProjects, fetchTags]);
 
   useEffect(() => {
     if (initialLoadRef.current) {
@@ -56,18 +68,23 @@ export default function HomePage() {
       return;
     }
     setLoading(true);
-    fetchProjects(selectedTag, deferredSearch).finally(() => setLoading(false));
-  }, [selectedTag, deferredSearch, fetchProjects]);
+    const tasks: Promise<unknown>[] = [
+      fetchProjects(selectedTag, deferredSearch, sortMode),
+    ];
+    if (sortMode !== previousModeRef.current) {
+      tasks.push(fetchTags(sortMode));
+      previousModeRef.current = sortMode;
+    }
+    Promise.all(tasks).finally(() => setLoading(false));
+  }, [selectedTag, deferredSearch, sortMode, fetchProjects, fetchTags]);
 
   const handleScanComplete = useCallback(() => {
     setLoading(true);
     Promise.all([
-      fetchProjects(selectedTag, deferredSearch),
-      fetch('/api/tags').then(r => r.json()).then(data => {
-        setTags((data.tags ?? []).map((t: { name: string }) => t.name));
-      }).catch(() => {}),
+      fetchProjects(selectedTag, deferredSearch, sortMode),
+      fetchTags(sortMode).catch(() => {}),
     ]).finally(() => setLoading(false));
-  }, [selectedTag, deferredSearch, fetchProjects]);
+  }, [selectedTag, deferredSearch, sortMode, fetchProjects, fetchTags]);
 
   return (
     <ScanProvider onComplete={handleScanComplete}>
@@ -76,13 +93,32 @@ export default function HomePage() {
         <div>
           <h1 className="text-2xl font-bold">AI Radar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            追踪 GitHub 上最新的 AI 项目和技术动态
+            {sortMode === 'hot'
+              ? '近 90 天创建的 AI 项目，按热度排序'
+              : 'AI 推荐榜，兼顾热度、完整度和技术价值'}
           </p>
         </div>
         <ScanButton />
       </div>
 
       <ScanProgress />
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          value={sortMode}
+          onValueChange={value => setSortMode(value as ProjectSortMode)}
+        >
+          <TabsList>
+            <TabsTrigger value="hot">近 90 天最火</TabsTrigger>
+            <TabsTrigger value="recommended">AI 推荐</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <p className="text-xs text-muted-foreground">
+          {sortMode === 'hot'
+            ? '按 Stars、Forks、最近更新时间排序'
+            : '按 AI 推荐分、Stars 排序'}
+        </p>
+      </div>
 
       <div className="mb-4">
         <div className="relative max-w-md">

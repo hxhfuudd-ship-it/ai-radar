@@ -33,17 +33,13 @@ export async function searchRepos(query: string, sort = 'stars', perPage = 20): 
   return data.items ?? [];
 }
 
-export async function getTrendingAIRepos(): Promise<GitHubRepo[]> {
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const dateStr = oneWeekAgo.toISOString().split('T')[0];
-
-  const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const monthStr = oneMonthAgo.toISOString().split('T')[0];
-
+export async function getTrendingAIRepos(windowDays = 90): Promise<GitHubRepo[]> {
+  const dateStr = getRecentDate(windowDays);
   const queries = [
     `topic:llm stars:>10 created:>${dateStr}`,
+    `topic:agent stars:>10 created:>${dateStr}`,
     `topic:ai-agent stars:>10 created:>${dateStr}`,
-    `topic:mcp stars:>5 created:>${monthStr}`,
+    `topic:mcp stars:>5 created:>${dateStr}`,
     `topic:rag stars:>10 created:>${dateStr}`,
   ];
 
@@ -66,6 +62,10 @@ export async function getTrendingAIRepos(): Promise<GitHubRepo[]> {
   }
 
   return results.sort((a, b) => b.stargazers_count - a.stargazers_count);
+}
+
+function getRecentDate(daysAgo: number): string {
+  return new Date(Date.now() - daysAgo * 86_400_000).toISOString().split('T')[0];
 }
 
 export async function getRepoReadme(fullName: string): Promise<string> {

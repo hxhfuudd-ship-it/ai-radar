@@ -259,7 +259,7 @@ async function cleanupOldProjects() {
   const bookmarkRows = await db.select({ projectId: schema.bookmarks.projectId }).from(schema.bookmarks).all();
   const bookmarkedIds = new Set(bookmarkRows.map(b => b.projectId));
 
-  const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const cutoff = new Date(Date.now() - APP_CONFIG.projectRetentionDays * 86_400_000).toISOString();
   const oldRows = await db
     .select({ id: schema.projects.id })
     .from(schema.projects)
@@ -273,7 +273,7 @@ async function cleanupOldProjects() {
   }
 
   if (old.length > 0) {
-    console.log(`[Cleanup] 清理了 ${old.length} 个 30 天前的旧项目（已跳过收藏项目）`);
+    console.log(`[Cleanup] 清理了 ${old.length} 个 ${APP_CONFIG.projectRetentionDays} 天前的旧项目（已跳过收藏项目）`);
   }
 
   const all = await db

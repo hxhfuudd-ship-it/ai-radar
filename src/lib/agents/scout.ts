@@ -27,11 +27,13 @@ function scoreRepo(repo: { description: string | null; topics: string[]; stargaz
 
 export async function runScout(): Promise<ScanResult> {
   updateScanStatus({ current: '搜索 GitHub Trending...' });
-  const trendingRepos = await getTrendingAIRepos();
+  const hotWindowDays = APP_CONFIG.hotProjectWindowDays;
+  const createdSince = getRecentDate(hotWindowDays);
+  const trendingRepos = await getTrendingAIRepos(hotWindowDays);
   updateScanStatus({ current: `找到 ${trendingRepos.length} 个热门仓库，补充搜索中...` });
 
-  const extraQueries = APP_CONFIG.githubTopics.slice(0, 2).map(
-    topic => `topic:${topic} stars:>10 created:>${getRecentDate(30)}`
+  const extraQueries = APP_CONFIG.githubTopics.slice(0, 4).map(
+    topic => `topic:${topic} stars:>10 created:>${createdSince}`
   );
   const extraSettled = await Promise.allSettled(
     extraQueries.map(q => searchRepos(q, 'updated', 10))
@@ -46,7 +48,11 @@ export async function runScout(): Promise<ScanResult> {
   const scored = allRepos
     .map(r => ({ repo: r, score: scoreRepo(r) }))
     .filter(s => s.score >= 3)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) =>
+      b.repo.stargazers_count - a.repo.stargazers_count ||
+      b.repo.forks_count - a.repo.forks_count ||
+      b.score - a.score
+    )
     .slice(0, APP_CONFIG.maxProjectsPerScan);
 
   const projects: RawProject[] = scored.map(({ repo: r }) => ({

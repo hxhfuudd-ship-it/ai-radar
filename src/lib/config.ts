@@ -62,6 +62,8 @@ export const APP_CONFIG = {
   maxProjectsPerScan: 15,
   analysisConcurrency: 5,
   readmeMaxChars: 4000,
+  hotProjectWindowDays: 90,
+  projectRetentionDays: 120,
   skipIfAnalyzedWithinDays: 1,
   githubTopics: [
     'llm', 'agent', 'mcp', 'rag', 'ai-agent', 'multi-agent',
