@@ -18,7 +18,7 @@ Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 + SQLite/Turso (@libsql/clie
 
 ## 运行
 ```bash
-cd ~/Desktop/my_own_project && npm run dev
+cd ~/Desktop/ai-radar && npm run dev
 # 访问 http://localhost:3000
 # 数据库重建: npx drizzle-kit push
 # 重建 Turso 云数据库: TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... npx drizzle-kit push

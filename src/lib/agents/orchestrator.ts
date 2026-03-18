@@ -4,7 +4,7 @@ import { analyzeProject } from './analyst';
 import type { RawProject } from './types';
 import { db, schema } from '../db';
 import { eq, lt } from 'drizzle-orm';
-import { getRepoReadme } from '../mcp/github/tools';
+import { getRepoDetail, getRepoReadme } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
 
 export interface ScanProgress {
@@ -20,6 +20,14 @@ type ProgressCallback = (progress: ScanProgress) => void;
 export async function runFullScan(onProgress?: ProgressCallback, force = false) {
   try {
     await cleanupOldProjects();
+
+    onProgress?.({
+      phase: 'scouting',
+      total: 0,
+      completed: 0,
+      current: '刷新已有项目数据...',
+    });
+    await refreshTrackedProjects(onProgress);
 
     onProgress?.({ phase: 'scouting', total: 0, completed: 0 });
 
@@ -40,12 +48,15 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
       if (existing) {
         await db.update(schema.projects)
           .set({
+            name: p.name,
+            url: p.url,
             stars: p.stars,
             forks: p.forks,
             repoCreatedAt: p.createdAt,
             repoUpdatedAt: p.updatedAt,
             description: p.description,
             language: p.language,
+            topics: p.topics.join(','),
           })
           .where(eq(schema.projects.id, existing.id))
           .run();
@@ -292,5 +303,60 @@ async function cleanupOldProjects() {
 
   if (dupCount > 0) {
     console.log(`[Cleanup] 清理了 ${dupCount} 个重复项目`);
+  }
+}
+
+async function refreshTrackedProjects(onProgress?: ProgressCallback) {
+  const trackedProjects = await db
+    .select({
+      id: schema.projects.id,
+      fullName: schema.projects.fullName,
+    })
+    .from(schema.projects)
+    .all();
+
+  if (trackedProjects.length === 0) {
+    return;
+  }
+
+  let completed = 0;
+  const batchSize = 8;
+
+  for (let i = 0; i < trackedProjects.length; i += batchSize) {
+    const batch = trackedProjects.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (project) => {
+        try {
+          const detail = await getRepoDetail(project.fullName);
+          if (!detail) return;
+
+          await db.update(schema.projects)
+            .set({
+              name: detail.name,
+              fullName: detail.full_name,
+              url: detail.html_url,
+              description: detail.description,
+              stars: detail.stargazers_count,
+              forks: detail.forks_count,
+              language: detail.language,
+              topics: detail.topics.join(','),
+              repoCreatedAt: detail.created_at,
+              repoUpdatedAt: detail.updated_at,
+            })
+            .where(eq(schema.projects.id, project.id))
+            .run();
+        } catch (err) {
+          console.error(`Failed to refresh ${project.fullName}`, err);
+        } finally {
+          completed += 1;
+          onProgress?.({
+            phase: 'scouting',
+            total: trackedProjects.length,
+            completed,
+            current: `已刷新 ${completed}/${trackedProjects.length} 个已有项目`,
+          });
+        }
+      })
+    );
   }
 }
