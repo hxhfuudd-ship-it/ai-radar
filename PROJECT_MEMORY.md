@@ -43,7 +43,7 @@ npm run dev
 - Every scan now refreshes tracked project metadata before scanning new candidates, and refreshes recommendation scores for tracked projects.
 - One scan now merges two candidate sources:
   - hot pool: new projects from the last `90` days
-  - recommendation pool: broader active AI projects with higher star thresholds
+  - recommendation pool: active AI projects with `stars > 300` and code pushes within the last `180` days
 - Project cleanup retention is `365` days, so hot and recommendation data are both retained.
 - Re-analysis skip window remains `1` day unless force scan.
 

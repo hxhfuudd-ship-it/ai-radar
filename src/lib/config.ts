@@ -64,8 +64,8 @@ export const APP_CONFIG = {
   analysisConcurrency: 5,
   readmeMaxChars: 4000,
   hotProjectWindowDays: 90,
-  recommendedProjectActiveWindowDays: 365,
-  recommendedProjectMinStars: 150,
+  recommendedProjectActiveWindowDays: 180,
+  recommendedProjectMinStars: 300,
   projectRetentionDays: 365,
   skipIfAnalyzedWithinDays: 1,
   githubTopics: [
