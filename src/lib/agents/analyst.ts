@@ -47,7 +47,7 @@ export async function analyzeProject(project: RawProject, readme: string): Promi
   ]);
 
   const tags = extractTags(project, analysis);
-  const score = computeScore(project, analysis);
+  const score = computeProjectScore(project, analysis);
 
   return {
     projectId: project.fullName,
@@ -86,28 +86,46 @@ function extractTags(project: RawProject, analysis: string): string[] {
   return Array.from(tagSet).slice(0, 10);
 }
 
-function computeScore(project: RawProject, analysis: string): number {
+export function computeProjectScore(project: RawProject, analysis: string): number {
   let score = 0;
 
   // Star 热度
-  if (project.stars > 5000) score += 5;
-  else if (project.stars > 1000) score += 4;
-  else if (project.stars > 300) score += 3;
-  else if (project.stars > 50) score += 2;
+  if (project.stars > 20000) score += 6;
+  else if (project.stars > 5000) score += 5;
+  else if (project.stars > 1500) score += 4;
+  else if (project.stars > 400) score += 3;
+  else if (project.stars > 80) score += 2;
   else if (project.stars > 10) score += 1;
 
+  // Fork 和社区活跃度
+  if (project.forks > 2000) score += 2;
+  else if (project.forks > 500) score += 1.5;
+  else if (project.forks > 100) score += 1;
+  else if (project.forks > 20) score += 0.5;
+
   // 项目信息完整度
-  if (project.topics.length > 3) score += 1;
-  if (project.description && project.description.length > 50) score += 1;
+  if (project.topics.length > 5) score += 1;
+  else if (project.topics.length > 2) score += 0.5;
+  if (project.description && project.description.length > 80) score += 1;
+  else if (project.description && project.description.length > 30) score += 0.5;
 
   // 分析报告质量（内容越丰富说明项目越有料）
-  if (analysis.length > 1000) score += 2;
-  else if (analysis.length > 500) score += 1;
+  if (analysis.length > 1400) score += 2;
+  else if (analysis.length > 800) score += 1;
+  else if (analysis.length > 400) score += 0.5;
 
-  // 是否新鲜（7 天内更新）
+  // 维护活跃度
   const updatedAt = new Date(project.updatedAt);
   const daysSinceUpdate = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSinceUpdate < 7) score += 1;
+  if (daysSinceUpdate < 14) score += 1.5;
+  else if (daysSinceUpdate < 60) score += 1;
+  else if (daysSinceUpdate < 180) score += 0.5;
+  else if (daysSinceUpdate > 365) score -= 0.5;
 
-  return Math.min(Math.round(score / 2), 5);
+  // 有一定时间沉淀的成熟项目更适合放进推荐池
+  const createdAt = new Date(project.createdAt);
+  const ageDays = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays > 30 && ageDays < 730) score += 0.5;
+
+  return Math.max(1, Math.min(Math.round(score / 2.5), 5));
 }

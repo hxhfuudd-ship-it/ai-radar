@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { runScout } from './scout';
-import { analyzeProject } from './analyst';
+import { analyzeProject, computeProjectScore } from './analyst';
 import type { RawProject } from './types';
 import { db, schema } from '../db';
 import { eq, lt } from 'drizzle-orm';
@@ -46,6 +46,18 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
         .get();
 
       if (existing) {
+        const refreshedProject: RawProject = {
+          name: p.name,
+          fullName: p.fullName,
+          url: p.url,
+          description: p.description,
+          stars: p.stars,
+          forks: p.forks,
+          language: p.language,
+          topics: p.topics,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        };
         await db.update(schema.projects)
           .set({
             name: p.name,
@@ -57,6 +69,9 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
             description: p.description,
             language: p.language,
             topics: p.topics.join(','),
+            score: existing.analysis
+              ? computeProjectScore(refreshedProject, existing.analysis)
+              : existing.score,
           })
           .where(eq(schema.projects.id, existing.id))
           .run();
@@ -311,6 +326,8 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
     .select({
       id: schema.projects.id,
       fullName: schema.projects.fullName,
+      analysis: schema.projects.analysis,
+      score: schema.projects.score,
     })
     .from(schema.projects)
     .all();
@@ -330,6 +347,19 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
           const detail = await getRepoDetail(project.fullName);
           if (!detail) return;
 
+          const refreshedProject: RawProject = {
+            name: detail.name,
+            fullName: detail.full_name,
+            url: detail.html_url,
+            description: detail.description,
+            stars: detail.stargazers_count,
+            forks: detail.forks_count,
+            language: detail.language,
+            topics: detail.topics,
+            createdAt: detail.created_at,
+            updatedAt: detail.updated_at,
+          };
+
           await db.update(schema.projects)
             .set({
               name: detail.name,
@@ -342,6 +372,9 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
               topics: detail.topics.join(','),
               repoCreatedAt: detail.created_at,
               repoUpdatedAt: detail.updated_at,
+              score: project.analysis
+                ? computeProjectScore(refreshedProject, project.analysis)
+                : project.score,
             })
             .where(eq(schema.projects.id, project.id))
             .run();

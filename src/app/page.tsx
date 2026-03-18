@@ -95,7 +95,7 @@ export default function HomePage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {sortMode === 'hot'
               ? '近 90 天创建的 AI 项目，按热度排序'
-              : 'AI 推荐榜，兼顾热度、完整度和技术价值'}
+              : '跨周期 AI 精选，兼顾长期价值、维护活跃度和技术质量'}
           </p>
         </div>
         <ScanButton />
@@ -116,7 +116,7 @@ export default function HomePage() {
         <p className="text-xs text-muted-foreground">
           {sortMode === 'hot'
             ? '按 Stars、Forks、最近更新时间排序'
-            : '按 AI 推荐分、Stars 排序'}
+            : '按 AI 推荐分、Stars、最近更新时间排序'}
         </p>
       </div>
 

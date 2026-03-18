@@ -59,11 +59,14 @@ export const defaultProvider: LLMProvider =
 
 export const APP_CONFIG = {
   scanIntervalHours: 12,
-  maxProjectsPerScan: 15,
+  maxHotProjectsPerScan: 15,
+  maxRecommendedProjectsPerScan: 12,
   analysisConcurrency: 5,
   readmeMaxChars: 4000,
   hotProjectWindowDays: 90,
-  projectRetentionDays: 120,
+  recommendedProjectActiveWindowDays: 365,
+  recommendedProjectMinStars: 150,
+  projectRetentionDays: 365,
   skipIfAnalyzedWithinDays: 1,
   githubTopics: [
     'llm', 'agent', 'mcp', 'rag', 'ai-agent', 'multi-agent',

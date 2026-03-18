@@ -38,9 +38,13 @@ npm run dev
 - Homepage default is `近 90 天最火`, not recommendation-first.
 - Hot ranking filters to projects created within the last `90` days.
 - Hot ranking sorts by `stars DESC`, then `forks DESC`, then `repoUpdatedAt DESC`.
-- `AI 推荐` tab still exists and sorts by `score DESC`, then `stars DESC`.
-- Every scan now refreshes tracked project metadata before scanning new candidates.
-- Project cleanup retention is `120` days, so the 90-day hot list is not deleted too early.
+- `AI 推荐` is now a separate recommendation pool, not just another sort order on the hot pool.
+- Recommendation ranking sorts by `score DESC`, then `stars DESC`, then `repoUpdatedAt DESC`.
+- Every scan now refreshes tracked project metadata before scanning new candidates, and refreshes recommendation scores for tracked projects.
+- One scan now merges two candidate sources:
+  - hot pool: new projects from the last `90` days
+  - recommendation pool: broader active AI projects with higher star thresholds
+- Project cleanup retention is `365` days, so hot and recommendation data are both retained.
 - Re-analysis skip window remains `1` day unless force scan.
 
 ## Core Flow
