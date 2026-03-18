@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { startTransition, useState, useRef, useEffect, useCallback } from 'react';
 
 let msgCounter = 0;
 function nextMsgId() {
@@ -29,8 +29,8 @@ function trimText(value: unknown, maxChars: number): string | null {
 function buildCompactProjectContext(projectContext: Record<string, unknown>) {
   return {
     ...projectContext,
-    summary: trimText(projectContext.summary, 500),
-    analysis: trimText(projectContext.analysis, 1200),
+    summary: trimText(projectContext.summary, 280),
+    analysis: trimText(projectContext.analysis, 520),
   };
 }
 
@@ -72,30 +72,42 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     setInput('');
     const userMsg: ChatMessage = { id: nextMsgId(), role: 'user', content: msg };
     const assistantId = nextMsgId();
+    const initialStatus = options.projectContext
+      ? '正在读取项目资料...'
+      : '正在准备回答...';
     setMessages(prev => [
       ...prev,
       userMsg,
-      { id: assistantId, role: 'assistant', content: '' },
+      { id: assistantId, role: 'assistant', content: '', status: initialStatus },
     ]);
     setIsLoading(true);
 
     let accumulated = '';
     let rafId: number | null = null;
+    let currentStatus = initialStatus;
+    let hasFirstContent = false;
 
     const flushContent = () => {
       rafId = null;
-      setMessages(prev => {
-        const updated = [...prev];
-        const idx = updated.findIndex(m => m.id === assistantId);
-        if (idx >= 0) {
-          updated[idx] = { ...updated[idx], content: accumulated, status: undefined };
-        }
-        return updated;
+      startTransition(() => {
+        setMessages(prev => {
+          const updated = [...prev];
+          const idx = updated.findIndex(m => m.id === assistantId);
+          if (idx >= 0) {
+            updated[idx] = {
+              ...updated[idx],
+              content: accumulated,
+              status: currentStatus,
+            };
+          }
+          return updated;
+        });
       });
     };
 
     try {
-      const history = messagesRef.current.slice(-8).map(m => ({
+      const historyLimit = options.projectContext ? 4 : 8;
+      const history = messagesRef.current.slice(-historyLimit).map(m => ({
         role: m.role,
         content: m.content,
       }));
@@ -137,17 +149,28 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           try {
             const parsed = JSON.parse(data);
             if (parsed.status) {
+              currentStatus = String(parsed.status);
               if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-              setMessages(prev => {
-                const updated = [...prev];
-                const idx = updated.findIndex(m => m.id === assistantId);
-                if (idx >= 0) {
-                  updated[idx] = { ...updated[idx], content: accumulated, status: parsed.status };
-                }
-                return updated;
+              startTransition(() => {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const idx = updated.findIndex(m => m.id === assistantId);
+                  if (idx >= 0) {
+                    updated[idx] = {
+                      ...updated[idx],
+                      content: accumulated,
+                      status: currentStatus,
+                    };
+                  }
+                  return updated;
+                });
               });
             }
             if (parsed.content) {
+              if (!hasFirstContent) {
+                hasFirstContent = true;
+                currentStatus = '正在逐步回答...';
+              }
               accumulated += parsed.content;
               if (!rafId) {
                 rafId = requestAnimationFrame(flushContent);
@@ -172,13 +195,20 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       }
     } finally {
       if (rafId) cancelAnimationFrame(rafId);
-      setMessages(prev => {
-        const updated = [...prev];
-        const idx = updated.findIndex(m => m.id === assistantId);
-        if (idx >= 0) {
-          updated[idx] = { ...updated[idx], content: accumulated, done: true };
-        }
-        return updated;
+      startTransition(() => {
+        setMessages(prev => {
+          const updated = [...prev];
+          const idx = updated.findIndex(m => m.id === assistantId);
+          if (idx >= 0) {
+            updated[idx] = {
+              ...updated[idx],
+              content: accumulated,
+              status: undefined,
+              done: true,
+            };
+          }
+          return updated;
+        });
       });
       setIsLoading(false);
     }

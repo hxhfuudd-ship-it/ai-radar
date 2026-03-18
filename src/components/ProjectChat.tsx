@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -49,6 +49,12 @@ export function ProjectChat({ project }: ProjectChatProps) {
     () => project as unknown as Record<string, unknown>,
     [project]
   );
+
+  useEffect(() => {
+    if (open) {
+      void import('@/components/MarkdownContent');
+    }
+  }, [open]);
 
   const {
     messages,
@@ -135,12 +141,30 @@ export function ProjectChat({ project }: ProjectChatProps) {
                   >
                     {msg.role === 'assistant' ? (
                       msg.content ? (
-                        <div className={msg.done ? '' : 'content-appear'}>
-                          <MarkdownContent
-                            content={msg.content}
-                            className="text-sm"
-                            isStreaming={!msg.done}
-                          />
+                        <div className="space-y-2">
+                          {!msg.done ? (
+                            <div className="flex items-center gap-2 text-[11px] text-primary">
+                              <span className="thinking-orbit inline-flex h-2 w-2 rounded-full bg-primary/90" />
+                              <span>{msg.status ?? '正在逐步回答...'}</span>
+                              <span className="text-muted-foreground">
+                                {elapsed > 0 ? `· ${elapsed}s` : ''}
+                              </span>
+                            </div>
+                          ) : null}
+
+                          <div className={msg.done ? '' : 'content-appear'}>
+                            <MarkdownContent
+                              content={msg.content}
+                              className="text-sm"
+                              isStreaming={!msg.done}
+                            />
+                          </div>
+
+                          {!msg.done ? (
+                            <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
+                              <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
+                            </div>
+                          ) : null}
                         </div>
                       ) : !msg.done ? (
                         <div className="space-y-2.5 py-1">

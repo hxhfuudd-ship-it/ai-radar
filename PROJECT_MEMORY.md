@@ -15,6 +15,12 @@
 - OpenAI-compatible LLM endpoint (`DEFAULT_PROVIDER=custom`)
 - GitHub API + Tavily web search
 
+## Model Roles
+- `kimi-k2.5`: global Advisor chat
+- `glm-4.7`: fast-tier tasks, routing, summary generation, project chat
+- `deepseek-v3.2`: Analyst deep analysis
+- `Scout` and `Orchestrator` do not use LLMs directly
+
 ## Run
 ```bash
 cd ~/Desktop/ai-radar
