@@ -148,6 +148,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           }
           try {
             const parsed = JSON.parse(data);
+            if (parsed.error) {
+              throw new Error(String(parsed.error));
+            }
             if (parsed.status) {
               currentStatus = String(parsed.status);
               if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
@@ -176,11 +179,11 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 rafId = requestAnimationFrame(flushContent);
               }
             }
-            if (parsed.error) {
-              throw new Error(String(parsed.error));
+          } catch (parseErr) {
+            if (parseErr instanceof Error && parseErr.message !== data) {
+              throw parseErr; // re-throw real errors (e.g. parsed.error)
             }
-          } catch {
-            // skip malformed chunks
+            // skip malformed JSON chunks
           }
         }
 

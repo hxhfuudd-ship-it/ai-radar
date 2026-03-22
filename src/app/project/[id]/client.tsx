@@ -38,7 +38,7 @@ export function BookmarkButton({ projectId, initialBookmarked }: { projectId: st
 }
 
 export function AnalysisContent({ content }: { content: string }) {
-  return <MarkdownContent content={content} />;
+  return <MarkdownContent content={content} className="analysis-markdown" />;
 }
 
 export function ProjectChatWrapper({ project }: { project: ProjectContext }) {

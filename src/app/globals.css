@@ -190,3 +190,29 @@
 .thinking-pulse {
   animation: pulse-dot 1.3s ease-in-out infinite;
 }
+
+/* Force Streamdown markdown content to use smaller sizes in detail cards */
+.analysis-markdown p,
+.analysis-markdown li,
+.analysis-markdown td {
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+.analysis-markdown h1,
+.analysis-markdown h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+.analysis-markdown h3,
+.analysis-markdown h4,
+.analysis-markdown h5,
+.analysis-markdown h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 1em;
+  margin-bottom: 0.375em;
+}
