@@ -145,3 +145,30 @@ src/hooks/
 - 浏览器侧若还看到旧问答报错，优先关闭旧标签页，重新打开 `http://localhost:3000`，或至少强刷，确保不再使用旧内存中的 JS bundle。
 - `.next-stale-20260322-chat-fix/` 是这次排障保留的旧编译目录；确认一切稳定后可以删除。
 - `comparatorSkill` 仍已定义但尚未接入 Advisor，对比能力目前仍走 Analyst 直接分析。
+
+## Production Follow-up (2026-03-22)
+- 已把线上相关修复提交并推送到 GitHub `main`，用于触发 Vercel 自动部署。部署提交为 `b201c0b`：`fix: stabilize production chat and feed experience`。
+- 推送前已验证：
+  - `npm run lint` 通过
+  - `npm run build` 通过
+- 线上问题进一步定位后，确认生产站项目问答失败的根因不是前端缓存，也不是当前代码逻辑，而是 Vercel 生产环境调用上游模型时返回了 `401 The API key doesn't exist`。
+- 结合代码路径可确认，项目问答走的是 `custom` provider：
+  - `src/lib/agents/advisor.ts`
+  - `src/lib/config.ts`
+  - `src/lib/llm.ts`
+- 因此生产环境最关键的变量是：
+  - `DEFAULT_PROVIDER`
+  - `CUSTOM_BASE_URL`
+  - `CUSTOM_API_KEY`
+  - `CUSTOM_MODEL_FAST`
+  - `CUSTOM_MODEL_SMART`
+  - `PROJECT_CHAT_MODEL`
+  - `ADVISOR_MODEL`
+  - `ANALYST_MODEL`
+- 本地 `localhost:3000` 能正常回答，说明 `.env.local` 的这套值是可用的；生产站报 401，说明 Vercel 上至少 `CUSTOM_API_KEY` 已失效、填错，或和 `CUSTOM_BASE_URL` / 模型配置不匹配。
+- 本轮未直接修复 Vercel env：当前机器没有可用的 Vercel 登录凭据，无法直接改线上环境变量；走的是 `git push origin main` 触发自动部署这条链路。
+- 远程连通性补充：
+  - `myownproject-pi.vercel.app` 域名解析正常
+  - 但当前执行环境对该域名的 HTTP 探测超时，无法在本机稳定完成最终线上回包校验
+- 本轮还做过一半的想法但未落地：准备给 `projectContext` 问答加“上游 API Key 失效时的本地摘要/分析兜底回答”，这样即使生产 key 有问题，项目页也不至于直接报错；用户中途打断，尚未实现。
+- 注意：当前仓库头部已不是 `b201c0b`，而是后续的 `dfe3497`（提交信息为 `1`）。这次生产排障结论仍然成立，但如果后续继续改线上问题，需要先看 `dfe3497` 是否又改动了部署相关内容。

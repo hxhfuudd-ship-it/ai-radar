@@ -22,9 +22,14 @@ const clientCache = new Map<string, OpenAI>();
 
 function getClient(provider: LLMProvider): OpenAI {
   const config = getProviderConfig(provider);
-  const cacheKey = `${provider}:${config.baseURL}`;
+  const cacheKey = `${provider}:${config.baseURL}:${config.apiKey}`;
   const cached = clientCache.get(cacheKey);
   if (cached) return cached;
+
+  // 清除同 provider 的旧缓存（key 可能变了）
+  for (const k of clientCache.keys()) {
+    if (k.startsWith(`${provider}:`)) clientCache.delete(k);
+  }
 
   const client = new OpenAI({
     baseURL: config.baseURL,
