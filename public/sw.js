@@ -1,10 +1,6 @@
-const CACHE_NAME = 'ai-radar-v2';
-const STATIC_ASSETS = ['/', '/chat', '/bookmarks'];
+const CACHE_NAME = 'ai-radar-v3';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -21,8 +17,31 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  if (request.url.includes('/api/')) return;
+  const url = new URL(request.url);
 
+  // Never cache: API routes, dynamic pages, HTML navigation
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/project/') ||
+    request.mode === 'navigate'
+  ) return;
+
+  // Cache-first for static assets (_next/static)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Network-first for everything else (icons, manifest, etc.)
   event.respondWith(
     fetch(request)
       .then((response) => {
