@@ -20,17 +20,12 @@ export async function GET(
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  const tagLinks = await db
-    .select()
+  const tagRecords = await db
+    .select({ name: schema.tags.name })
     .from(schema.projectTags)
+    .innerJoin(schema.tags, eq(schema.projectTags.tagId, schema.tags.id))
     .where(eq(schema.projectTags.projectId, id))
     .all();
-
-  const tagRecords = [];
-  for (const tl of tagLinks) {
-    const tag = await db.select().from(schema.tags).where(eq(schema.tags.id, tl.tagId)).get();
-    if (tag) tagRecords.push(tag);
-  }
 
   const isBookmarked = await db
     .select()

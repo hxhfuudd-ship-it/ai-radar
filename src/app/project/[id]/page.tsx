@@ -1,93 +1,50 @@
-'use client';
-
-import { useEffect, useState, useCallback, use } from 'react';
-import dynamic from 'next/dynamic';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ProjectChat } from '@/components/ProjectChat';
-import type { Project } from '@/lib/db/schema';
+import { db, schema } from '@/lib/db';
+import { eq } from 'drizzle-orm';
+import { ProjectDetailClient } from './client';
 
-const MarkdownContent = dynamic(
-  () => import('@/components/MarkdownContent').then(m => ({ default: m.MarkdownContent })),
-  { ssr: false }
-);
+export const dynamic = 'force-dynamic';
 
-interface ProjectDetail {
-  project: Project;
-  tags: string[];
-  isBookmarked: boolean;
-}
-
-export default function ProjectDetailPage({
+export default async function ProjectDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
-  const [data, setData] = useState<ProjectDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [bookmarked, setBookmarked] = useState(false);
+  const { id } = await params;
 
-  useEffect(() => {
-    async function load() {
-      const res = await fetch(`/api/projects/${id}`);
-      if (res.ok) {
-        const detail = await res.json();
-        setData(detail);
-        setBookmarked(detail.isBookmarked);
-      }
-      setLoading(false);
-    }
-    load();
-  }, [id]);
+  const project = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, id))
+    .get();
 
-  const toggleBookmark = useCallback(async () => {
-    if (!data) return;
-    const res = await fetch('/api/bookmarks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId: data.project.id }),
-    });
-    const result = await res.json();
-    setBookmarked(result.bookmarked);
-  }, [data]);
+  if (!project) notFound();
 
-  if (loading) {
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-6">
-        <Skeleton className="mb-4 h-8 w-64" />
-        <Skeleton className="mb-2 h-4 w-full" />
-        <Skeleton className="mb-2 h-4 w-3/4" />
-        <Skeleton className="mt-6 h-64 w-full rounded-xl" />
-      </main>
-    );
-  }
+  const tagRecords = await db
+    .select({ name: schema.tags.name })
+    .from(schema.projectTags)
+    .innerJoin(schema.tags, eq(schema.projectTags.tagId, schema.tags.id))
+    .where(eq(schema.projectTags.projectId, id))
+    .all();
 
-  if (!data) {
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-20 text-center">
-        <p className="text-lg text-muted-foreground">项目不存在</p>
-        <Link href="/">
-          <Button variant="link" className="mt-4">返回首页</Button>
-        </Link>
-      </main>
-    );
-  }
+  const isBookmarked = await db
+    .select()
+    .from(schema.bookmarks)
+    .where(eq(schema.bookmarks.projectId, id))
+    .get();
 
-  const { project, tags } = data;
+  const tags = tagRecords.map(t => t.name);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="mb-2">
-        <Link
-          href="/"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
+        <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
           ← 返回列表
         </Link>
       </div>
@@ -95,14 +52,10 @@ export default function ProjectDetailPage({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
           <h1 className="text-xl font-bold sm:text-2xl">{project.fullName}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {project.description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" className="min-h-[44px]" onClick={toggleBookmark}>
-            {bookmarked ? '已收藏' : '收藏'}
-          </Button>
+          <ProjectDetailClient projectId={project.id} initialBookmarked={!!isBookmarked} />
           <a href={project.url} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" className="min-h-[44px]">GitHub</Button>
           </a>
@@ -126,9 +79,7 @@ export default function ProjectDetailPage({
             更新于 {new Date(project.repoUpdatedAt).toLocaleDateString('zh-CN')}
           </span>
         ) : null}
-        {project.language ? (
-          <Badge variant="outline">{project.language}</Badge>
-        ) : null}
+        {project.language ? <Badge variant="outline">{project.language}</Badge> : null}
         {tags.map(tag => (
           <Badge key={tag} variant="secondary">{tag}</Badge>
         ))}
@@ -171,12 +122,12 @@ export default function ProjectDetailPage({
             <CardTitle className="text-base">深度分析</CardTitle>
           </CardHeader>
           <CardContent>
-            <MarkdownContent content={project.analysis} />
+            <ProjectDetailClient.Analysis content={project.analysis} />
           </CardContent>
         </Card>
       ) : null}
 
-      <ProjectChat
+      <ProjectDetailClient.Chat
         project={{
           fullName: project.fullName,
           url: project.url,

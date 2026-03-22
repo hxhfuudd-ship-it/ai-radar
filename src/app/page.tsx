@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useDeferredValue } from 'react';
-import { Search, X } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Search, X, WifiOff } from 'lucide-react';
 import { ProjectCard } from '@/components/ProjectCard';
 import { ScanProvider, ScanButton, ScanProgress } from '@/components/ScanButton';
 import { BrandLogo } from '@/components/BrandLogo';
@@ -20,71 +20,148 @@ export default function HomePage() {
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState<ProjectSortMode>('hot');
   const [loading, setLoading] = useState(true);
-  const deferredSearch = useDeferredValue(search);
+  const [error, setError] = useState(false);
+
   const initialLoadRef = useRef(true);
   const previousModeRef = useRef<ProjectSortMode>('hot');
+  const activeRequestIdRef = useRef(0);
+  const projectsAbortRef = useRef<AbortController | null>(null);
+  const tagsAbortRef = useRef<AbortController | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  // track latest search for debounced batch
+  const pendingSearchRef = useRef('');
 
-  const fetchTags = useCallback(async (mode: ProjectSortMode) => {
-    const res = await fetch(`/api/tags?mode=${mode}`);
-    const data = await res.json();
-    const nextTags = (data.tags ?? []).map((t: { name: string }) => t.name);
-    setTags(nextTags);
-    setSelectedTag(current => (current && !nextTags.includes(current) ? null : current));
+  const fetchTags = useCallback(async (mode: ProjectSortMode, requestId: number) => {
+    tagsAbortRef.current?.abort();
+    const controller = new AbortController();
+    tagsAbortRef.current = controller;
+    try {
+      const res = await fetch(`/api/tags?mode=${mode}`, { signal: controller.signal });
+      if (!res.ok) throw new Error('tags failed');
+      const data = await res.json();
+      if (requestId !== activeRequestIdRef.current) return;
+      const nextTags = (data.tags ?? []).map((t: { name: string }) => t.name);
+      setTags(nextTags);
+      setSelectedTag(current => (current && !nextTags.includes(current) ? null : current));
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      throw err;
+    }
   }, []);
 
-  const fetchProjects = useCallback(async (tag: string | null, q: string, mode: ProjectSortMode) => {
+  const fetchProjects = useCallback(async (tag: string | null, q: string, mode: ProjectSortMode, requestId: number) => {
+    projectsAbortRef.current?.abort();
+    const controller = new AbortController();
+    projectsAbortRef.current = controller;
     try {
       const params = new URLSearchParams();
       if (tag) params.set('tag', tag);
       if (q) params.set('search', q);
       params.set('mode', mode);
-      const res = await fetch(`/api/projects?${params}`);
+      const res = await fetch(`/api/projects?${params}`, { signal: controller.signal });
+      if (!res.ok) throw new Error('projects failed');
       const data = await res.json();
+      if (requestId !== activeRequestIdRef.current) return;
       setProjects(data.projects ?? []);
-    } catch {
-      setProjects([]);
+      setError(false);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (requestId === activeRequestIdRef.current) {
+        setError(true);
+        setProjects([]);
+      }
     }
   }, []);
 
-  useEffect(() => {
-    async function init() {
-      try {
-        await Promise.all([
-          fetchProjects(null, '', 'hot'),
-          fetchTags('hot'),
-        ]);
-      } catch {
-        // API 失败时仍然结束加载状态
-      } finally {
-        setLoading(false);
-      }
+  const runRequestBatch = useCallback(async ({
+    tag,
+    q,
+    mode,
+    includeTags,
+  }: {
+    tag: string | null;
+    q: string;
+    mode: ProjectSortMode;
+    includeTags: boolean;
+  }) => {
+    const requestId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = requestId;
+    setLoading(true);
+    setError(false);
+
+    if (!includeTags) {
+      tagsAbortRef.current?.abort();
+      tagsAbortRef.current = null;
     }
-    init();
+
+    const tasks: Promise<unknown>[] = [fetchProjects(tag, q, mode, requestId)];
+    if (includeTags) tasks.push(fetchTags(mode, requestId));
+
+    try {
+      await Promise.all(tasks);
+    } catch {
+      // individual fetch fns handle their own errors
+    } finally {
+      if (requestId === activeRequestIdRef.current) setLoading(false);
+    }
   }, [fetchProjects, fetchTags]);
 
+  // Initial load
+  useEffect(() => {
+    void runRequestBatch({ tag: null, q: '', mode: 'hot', includeTags: true });
+  }, [runRequestBatch]);
+
+  // Debounced re-fetch on filter changes (skip first render)
   useEffect(() => {
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
       return;
     }
-    setLoading(true);
-    const tasks: Promise<unknown>[] = [
-      fetchProjects(selectedTag, deferredSearch, sortMode),
-    ];
-    if (sortMode !== previousModeRef.current) {
-      tasks.push(fetchTags(sortMode));
-      previousModeRef.current = sortMode;
+
+    const includeTags = sortMode !== previousModeRef.current;
+    if (includeTags) previousModeRef.current = sortMode;
+
+    // For tag/mode changes fire immediately; for search debounce 300ms
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    pendingSearchRef.current = search;
+
+    const fire = () => {
+      void runRequestBatch({
+        tag: selectedTag,
+        q: pendingSearchRef.current,
+        mode: sortMode,
+        includeTags,
+      });
+    };
+
+    if (includeTags || selectedTag !== undefined) {
+      // mode or tag changed — fire now, cancel any pending search debounce
+      fire();
+    } else {
+      // only search changed — debounce
+      searchDebounceRef.current = setTimeout(fire, 300);
     }
-    Promise.all(tasks).finally(() => setLoading(false));
-  }, [selectedTag, deferredSearch, sortMode, fetchProjects, fetchTags]);
+
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [selectedTag, search, sortMode, runRequestBatch]);
 
   const handleScanComplete = useCallback(() => {
-    setLoading(true);
-    Promise.all([
-      fetchProjects(selectedTag, deferredSearch, sortMode),
-      fetchTags(sortMode).catch(() => {}),
-    ]).finally(() => setLoading(false));
-  }, [selectedTag, deferredSearch, sortMode, fetchProjects, fetchTags]);
+    void runRequestBatch({
+      tag: selectedTag,
+      q: search,
+      mode: sortMode,
+      includeTags: true,
+    });
+  }, [selectedTag, search, sortMode, runRequestBatch]);
+
+  useEffect(() => {
+    return () => {
+      projectsAbortRef.current?.abort();
+      tagsAbortRef.current?.abort();
+    };
+  }, []);
 
   return (
     <ScanProvider onComplete={handleScanComplete}>
@@ -104,10 +181,7 @@ export default function HomePage() {
       <ScanProgress />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs
-          value={sortMode}
-          onValueChange={value => setSortMode(value as ProjectSortMode)}
-        >
+        <Tabs value={sortMode} onValueChange={value => setSortMode(value as ProjectSortMode)}>
           <TabsList>
             <TabsTrigger value="hot">近 90 天最火</TabsTrigger>
             <TabsTrigger value="recommended">AI 推荐</TabsTrigger>
@@ -169,14 +243,28 @@ export default function HomePage() {
             <Skeleton key={i} className="h-48 rounded-xl" />
           ))}
         </div>
+      ) : error ? (
+        <div className="flex flex-col items-center py-20 text-muted-foreground">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+            <WifiOff className="h-8 w-8" />
+          </div>
+          <p className="text-lg font-medium">加载失败</p>
+          <p className="mt-2 text-sm">网络异常，请检查连接后重试</p>
+          <button
+            onClick={() => runRequestBatch({ tag: selectedTag, q: search, mode: sortMode, includeTags: true })}
+            className="mt-4 rounded-md border px-4 py-2 text-sm transition-colors hover:bg-accent active:bg-accent"
+          >
+            重新加载
+          </button>
+        </div>
       ) : projects.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-muted-foreground">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
             <BrandLogo size={32} className="h-8 w-8" decorative />
           </div>
-          <p className="text-lg font-medium">还没有项目数据</p>
+          <p className="text-lg font-medium">{search || selectedTag ? '没有匹配的项目' : '还没有项目数据'}</p>
           <p className="mt-2 text-sm">
-            点击上方「扫描最新项目」按钮开始发现 AI 项目
+            {search || selectedTag ? '换个关键词或标签试试' : '点击上方「扫描最新项目」按钮开始发现 AI 项目'}
           </p>
         </div>
       ) : (
