@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ai-radar-v1';
+const CACHE_NAME = 'ai-radar-v2';
 const STATIC_ASSETS = ['/', '/chat', '/bookmarks'];
 
 self.addEventListener('install', (event) => {
