@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,11 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectChat } from '@/components/ProjectChat';
 import type { Project } from '@/lib/db/schema';
+
+const MarkdownContent = dynamic(
+  () => import('@/components/MarkdownContent').then(m => ({ default: m.MarkdownContent })),
+  { ssr: false }
+);
 
 interface ProjectDetail {
   project: Project;
@@ -165,7 +171,7 @@ export default function ProjectDetailPage({
             <CardTitle className="text-base">深度分析</CardTitle>
           </CardHeader>
           <CardContent>
-            <AnalysisContent text={project.analysis} />
+            <MarkdownContent content={project.analysis} />
           </CardContent>
         </Card>
       ) : null}
@@ -184,58 +190,4 @@ export default function ProjectDetailPage({
       />
     </main>
   );
-}
-
-const HEADING_PATTERNS = [
-  /^【(.+?)】/,
-  /^#{1,3}\s+(.+)/,
-  /^\*\*(.+?)\*\*\s*$/,
-  /^(\S{2,8})\s*$/,
-];
-
-const KNOWN_HEADINGS = new Set([
-  '一句话总结', '核心功能', '技术亮点', '适用场景', '值得关注的原因',
-  '项目概述', '功能特点', '技术架构', '使用场景', '总结',
-  '优势', '不足', '推荐理由', '核心特性', '主要功能',
-]);
-
-function isHeading(line: string): string | null {
-  const trimmed = line.trim();
-  for (const pattern of HEADING_PATTERNS) {
-    const match = trimmed.match(pattern);
-    if (match) return match[1].trim();
-  }
-  const plain = trimmed.replace(/\*\*/g, '').replace(/[【】#]/g, '').trim();
-  if (KNOWN_HEADINGS.has(plain)) return plain;
-  return null;
-}
-
-function AnalysisContent({ text }: { text: string }) {
-  const lines = text.split('\n');
-  const elements: React.ReactNode[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const heading = isHeading(line);
-
-    if (heading) {
-      elements.push(
-        <h3 key={i} className="mt-5 mb-2 text-sm font-bold text-foreground">
-          {heading}
-        </h3>
-      );
-    } else if (line.trim()) {
-      const cleaned = line
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/\*(.+?)\*/g, '$1')
-        .replace(/^[-·•]\s*/, '');
-      elements.push(
-        <p key={i} className="text-sm leading-relaxed text-muted-foreground mb-1.5">
-          {cleaned}
-        </p>
-      );
-    }
-  }
-
-  return <div>{elements}</div>;
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { Star, GitFork } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,7 +25,7 @@ interface ProjectCardProps {
   project: Project;
 }
 
-export function ProjectCard({ project }: ProjectCardProps) {
+export const ProjectCard = React.memo(function ProjectCard({ project }: ProjectCardProps) {
   const tags = project.topics?.split(',').filter(Boolean) ?? [];
 
   return (
@@ -91,4 +92,4 @@ export function ProjectCard({ project }: ProjectCardProps) {
       </Card>
     </Link>
   );
-}
+});

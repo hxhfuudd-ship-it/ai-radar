@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { and, desc, eq, gte, like, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, like, or, type SQL } from 'drizzle-orm';
 import { APP_CONFIG } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -69,6 +69,15 @@ export async function GET(request: NextRequest) {
     ) as typeof query;
   }
 
+  // Count query with same filters for accurate total
+  let countQuery = db.select({ count: count() }).from(schema.projects);
+  if (conditions.length === 1) {
+    countQuery = countQuery.where(conditions[0]) as typeof countQuery;
+  } else if (conditions.length > 1) {
+    countQuery = countQuery.where(and(...conditions)) as typeof countQuery;
+  }
+  const [{ count: totalCount }] = await countQuery.all();
+
   const projects = await query
     .orderBy(
       ...(mode === 'recommended'
@@ -90,7 +99,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     projects,
-    total: projects.length,
+    total: totalCount,
     mode,
     hotWindowDays: APP_CONFIG.hotProjectWindowDays,
   });
