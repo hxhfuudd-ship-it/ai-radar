@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
-import { ProjectDetailClient } from './client';
+import { BookmarkButton, AnalysisContent, ProjectChatWrapper } from './client';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +55,7 @@ export default async function ProjectDetailPage({
           <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <ProjectDetailClient projectId={project.id} initialBookmarked={!!isBookmarked} />
+          <BookmarkButton projectId={project.id} initialBookmarked={!!isBookmarked} />
           <a href={project.url} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" className="min-h-[44px]">GitHub</Button>
           </a>
@@ -122,12 +122,12 @@ export default async function ProjectDetailPage({
             <CardTitle className="text-base">深度分析</CardTitle>
           </CardHeader>
           <CardContent>
-            <ProjectDetailClient.Analysis content={project.analysis} />
+            <AnalysisContent content={project.analysis} />
           </CardContent>
         </Card>
       ) : null}
 
-      <ProjectDetailClient.Chat
+      <ProjectChatWrapper
         project={{
           fullName: project.fullName,
           url: project.url,

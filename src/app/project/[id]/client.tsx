@@ -11,8 +11,7 @@ const MarkdownContent = dynamic(
   { ssr: false, loading: () => <div className="animate-pulse h-40 rounded bg-muted" /> }
 );
 
-// Bookmark toggle button
-function BookmarkButton({ projectId, initialBookmarked }: { projectId: string; initialBookmarked: boolean }) {
+export function BookmarkButton({ projectId, initialBookmarked }: { projectId: string; initialBookmarked: boolean }) {
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [pending, setPending] = useState(false);
 
@@ -38,22 +37,10 @@ function BookmarkButton({ projectId, initialBookmarked }: { projectId: string; i
   );
 }
 
-// Analysis markdown renderer
-function Analysis({ content }: { content: string }) {
+export function AnalysisContent({ content }: { content: string }) {
   return <MarkdownContent content={content} />;
 }
 
-// Project chat wrapper
-function Chat({ project }: { project: ProjectContext }) {
+export function ProjectChatWrapper({ project }: { project: ProjectContext }) {
   return <ProjectChat project={project} />;
 }
-
-// Named exports for use as compound component
-function ProjectDetailClient({ projectId, initialBookmarked }: { projectId: string; initialBookmarked: boolean }) {
-  return <BookmarkButton projectId={projectId} initialBookmarked={initialBookmarked} />;
-}
-
-ProjectDetailClient.Analysis = Analysis;
-ProjectDetailClient.Chat = Chat;
-
-export { ProjectDetailClient };
