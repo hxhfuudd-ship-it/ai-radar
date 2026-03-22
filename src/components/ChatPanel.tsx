@@ -106,7 +106,7 @@ export function ChatPanel() {
           ))}
         </div>
       </ScrollArea>
-      <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4">
+      <div className="safe-bottom-pad border-t p-3 sm:p-4">
         <div className="mx-auto flex max-w-2xl gap-2">
           <Textarea
             value={input}

@@ -48,7 +48,9 @@ export async function POST(request: NextRequest) {
         enqueue('[DONE]');
         controller.close();
       } catch (err) {
-        enqueue(JSON.stringify({ error: String(err) }));
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error('[chat API] Error:', errMsg);
+        enqueue(JSON.stringify({ error: errMsg }));
         controller.close();
       }
     },

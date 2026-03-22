@@ -1,10 +1,22 @@
 const CACHE_NAME = 'ai-radar-v3';
+const DEV_HOSTS = new Set(['localhost', '127.0.0.1']);
+const DISABLE_IN_DEV = DEV_HOSTS.has(self.location.hostname);
 
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  if (DISABLE_IN_DEV) {
+    event.waitUntil(
+      caches.keys().then(async (keys) => {
+        await Promise.all(keys.filter((k) => k.startsWith('ai-radar-')).map((k) => caches.delete(k)));
+        await self.registration.unregister();
+      })
+    );
+    return;
+  }
+
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
@@ -14,6 +26,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (DISABLE_IN_DEV) return;
+
   const { request } = event;
   if (request.method !== 'GET') return;
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { APP_CONFIG } from '@/lib/config';
-import { asc, eq, gte, or } from 'drizzle-orm';
+import { asc, eq, gte } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,41 +15,16 @@ export async function GET(request: Request) {
   }
 
   const cutoff = new Date(Date.now() - APP_CONFIG.hotProjectWindowDays * 86_400_000).toISOString();
-  const hotProjects = await db
-    .select({ id: schema.projects.id })
-    .from(schema.projects)
-    .where(gte(schema.projects.repoCreatedAt, cutoff))
-    .all();
-
-  if (hotProjects.length === 0) {
-    return NextResponse.json({ tags: [] });
-  }
-
-  const projectCondition = or(...hotProjects.map(project => eq(schema.projectTags.projectId, project.id)));
-  if (!projectCondition) {
-    return NextResponse.json({ tags: [] });
-  }
-
-  const links = await db
-    .select({ tagId: schema.projectTags.tagId })
-    .from(schema.projectTags)
-    .where(projectCondition)
-    .all();
-
-  const uniqueTagIds = Array.from(new Set(links.map(link => link.tagId)));
-  if (uniqueTagIds.length === 0) {
-    return NextResponse.json({ tags: [] });
-  }
-
-  const tagCondition = or(...uniqueTagIds.map(id => eq(schema.tags.id, id)));
-  if (!tagCondition) {
-    return NextResponse.json({ tags: [] });
-  }
-
   const tags = await db
-    .select()
+    .select({
+      id: schema.tags.id,
+      name: schema.tags.name,
+    })
     .from(schema.tags)
-    .where(tagCondition)
+    .innerJoin(schema.projectTags, eq(schema.projectTags.tagId, schema.tags.id))
+    .innerJoin(schema.projects, eq(schema.projectTags.projectId, schema.projects.id))
+    .where(gte(schema.projects.repoCreatedAt, cutoff))
+    .groupBy(schema.tags.id, schema.tags.name)
     .orderBy(asc(schema.tags.name))
     .all();
 

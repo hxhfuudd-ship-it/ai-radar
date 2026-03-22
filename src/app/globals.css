@@ -51,6 +51,8 @@
 }
 
 :root {
+  --font-geist-sans: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: "SFMono-Regular", "SF Mono", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -134,11 +136,29 @@
   }
 }
 
+@layer utilities {
+  .safe-top-inset {
+    padding-top: 0;
+  }
+
+  .safe-bottom-pad {
+    padding-bottom: 0.75rem;
+  }
+}
+
 @supports (padding: env(safe-area-inset-bottom)) {
   body {
     padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+  }
+
+  .safe-top-inset {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-bottom-pad {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
 

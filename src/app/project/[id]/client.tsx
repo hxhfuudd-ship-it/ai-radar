@@ -37,8 +37,16 @@ export function BookmarkButton({ projectId, initialBookmarked }: { projectId: st
   );
 }
 
+/**
+ * 将分析报告中的【标题】转换为 Markdown 标题格式，
+ * 确保标题独占一行，描述文字另起一行。
+ */
+function formatAnalysis(raw: string): string {
+  return raw.replace(/【([^】]+)】\s*/g, '\n\n## $1\n\n');
+}
+
 export function AnalysisContent({ content }: { content: string }) {
-  return <MarkdownContent content={content} className="analysis-markdown" />;
+  return <MarkdownContent content={formatAnalysis(content)} className="analysis-markdown" />;
 }
 
 export function ProjectChatWrapper({ project }: { project: ProjectContext }) {

@@ -117,11 +117,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         body.projectContext = buildCompactProjectContext(options.projectContext);
       }
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!res.ok) throw new Error('Chat request failed');
 
@@ -192,9 +196,16 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           break;
         }
       }
-    } catch {
+    } catch (err) {
       if (!accumulated) {
-        accumulated = '抱歉，出现了错误。请稍后重试。';
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          accumulated = '请求超时，AI 服务暂时无法响应。请稍后重试。';
+        } else {
+          const msg = err instanceof Error ? err.message : '';
+          accumulated = msg.includes('AuthenticationError')
+            ? 'AI 服务 API Key 已失效，请联系管理员更新配置。'
+            : `抱歉，AI 服务出现了错误。${msg ? `（${msg.slice(0, 100)}）` : '请稍后重试。'}`;
+        }
       }
     } finally {
       if (rafId) cancelAnimationFrame(rafId);
