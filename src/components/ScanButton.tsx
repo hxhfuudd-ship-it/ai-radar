@@ -90,8 +90,9 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   const rawPhaseRef = useRef('');
   const actualProgressRef = useRef(0);
   const serverTickRef = useRef(0);
-  // High-water mark: the maximum displayProgress value ever reached during this scan
-  const highWaterRef = useRef(0);
+  // This ref holds the monotonically-increasing displayed value.
+  // It is the SINGLE source of truth for "what the user has seen".
+  const displayedRef = useRef(0);
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -129,7 +130,10 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     if (!isScanning && (phase === '完成' || phase === '失败')) {
       const delay = phase === '完成' ? 8000 : 5000;
       const t = setTimeout(() => {
-        setPhase(''); setDetail(''); setDisplayProgress(0); setElapsed(0);
+        setPhase(''); setDetail('');
+        displayedRef.current = 0;
+        setDisplayProgress(0);
+        setElapsed(0);
       }, delay);
       return () => clearTimeout(t);
     }
@@ -137,6 +141,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
   useEffect(() => {
     if (!isScanning && phase === '完成') {
+      displayedRef.current = 100;
       setDisplayProgress(100);
     }
   }, [isScanning, phase]);
@@ -146,40 +151,21 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
     const tick = setInterval(() => {
       const rawPhase = rawPhaseRef.current;
-      const actual = actualProgressRef.current;
-      const idleMs = Date.now() - serverTickRef.current;
+      // The target is always the server-reported actual progress (already monotonic via Math.max)
+      const target = rawPhase === 'done' ? 100 : actualProgressRef.current;
+      const current = displayedRef.current;
 
-      // Start from the server-reported actual progress
-      let target = actual;
+      if (target <= current) return; // Nothing to do, already at or beyond target
 
-      // Only add a tiny optimistic nudge when the server is idle (slow analysis)
-      // but cap it very conservatively: at most 2% above actual progress
-      if (rawPhase !== 'done' && rawPhase !== 'error') {
-        if (idleMs > 2000) {
-          const nudge = Math.min(2, (idleMs - 2000) / 5000);
-          target = actual + nudge;
-        }
-      } else if (rawPhase === 'done') {
-        target = 100;
-      }
+      // Smoothly ease toward the target
+      const delta = target - current;
+      const step = rawPhase === 'done'
+        ? Math.max(1.5, delta * 0.4)
+        : Math.max(0.15, delta * 0.12);
 
-      // Enforce high-water mark: target can never be below previous max
-      target = Math.max(target, highWaterRef.current);
-
-      setDisplayProgress(prev => {
-        const delta = target - prev;
-        if (delta <= 0) return prev;  // NEVER go backward
-        if (delta < 0.1) return target;
-
-        const easedStep = rawPhase === 'done'
-          ? Math.max(1.5, delta * 0.4)
-          : Math.max(0.15, delta * 0.12);
-
-        const next = Math.min(100, prev + easedStep);
-        // Update high-water mark
-        highWaterRef.current = Math.max(highWaterRef.current, next);
-        return next;
-      });
+      const next = Math.min(100, current + step);
+      displayedRef.current = next;
+      setDisplayProgress(next);
     }, 120);
 
     return () => clearInterval(tick);
@@ -194,7 +180,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     setDisplayProgress(3);
     rawPhaseRef.current = 'refreshing';
     actualProgressRef.current = 3;
-    highWaterRef.current = 3;
+    displayedRef.current = 3;
     serverTickRef.current = Date.now();
     setElapsed(0);
 
@@ -255,12 +241,12 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
             const pct = phaseToProgress(data.phase, lastTotal, lastCompleted);
             actualProgressRef.current = Math.max(actualProgressRef.current, pct);
-            highWaterRef.current = Math.max(highWaterRef.current, actualProgressRef.current);
             serverTickRef.current = Date.now();
 
             if (data.phase === 'done') {
               actualProgressRef.current = 100;
               serverTickRef.current = Date.now();
+              displayedRef.current = 100;
               setDisplayProgress(100);
               if (typeof data.scannedAt === 'string' && data.scannedAt) {
                 streamScannedAt = data.scannedAt;
@@ -284,6 +270,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
         rawPhaseRef.current = 'done';
         actualProgressRef.current = 100;
         serverTickRef.current = Date.now();
+        displayedRef.current = 100;
         setDisplayProgress(100);
         const doneAt = new Date().toISOString();
         setLastScanAt(doneAt);
