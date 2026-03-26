@@ -75,15 +75,6 @@ function formatLastScan(iso: string): string {
   });
 }
 
-function phaseSoftCap(phase: string): number {
-  if (phase === 'refreshing') return 10;
-  if (phase === 'scouting') return 14;
-  if (phase === 'fetching') return 34;
-  if (phase === 'analyzing') return 96;
-  if (phase === 'done') return 100;
-  return 6;
-}
-
 // ---- Provider ----
 export function ScanProvider({ onComplete, children }: { onComplete?: () => void; children: React.ReactNode }) {
   const [isScanning, setIsScanning] = useState(false);
@@ -99,6 +90,8 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   const rawPhaseRef = useRef('');
   const actualProgressRef = useRef(0);
   const serverTickRef = useRef(0);
+  // High-water mark: the maximum displayProgress value ever reached during this scan
+  const highWaterRef = useRef(0);
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -155,28 +148,37 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
       const rawPhase = rawPhaseRef.current;
       const actual = actualProgressRef.current;
       const idleMs = Date.now() - serverTickRef.current;
+
+      // Start from the server-reported actual progress
       let target = actual;
 
+      // Only add a tiny optimistic nudge when the server is idle (slow analysis)
+      // but cap it very conservatively: at most 2% above actual progress
       if (rawPhase !== 'done' && rawPhase !== 'error') {
-        const cap = phaseSoftCap(rawPhase);
-        if (idleMs > 700 && actual < cap) {
-          const optimistic = Math.min(cap, actual + (idleMs - 700) / 240);
-          target = Math.max(target, optimistic);
+        if (idleMs > 2000) {
+          const nudge = Math.min(2, (idleMs - 2000) / 5000);
+          target = actual + nudge;
         }
       } else if (rawPhase === 'done') {
         target = 100;
       }
 
+      // Enforce high-water mark: target can never be below previous max
+      target = Math.max(target, highWaterRef.current);
+
       setDisplayProgress(prev => {
         const delta = target - prev;
         if (delta <= 0) return prev;  // NEVER go backward
-        if (Math.abs(delta) < 0.15) return target;
+        if (delta < 0.1) return target;
 
         const easedStep = rawPhase === 'done'
-          ? Math.max(1.2, delta * 0.35)
-          : Math.max(0.2, delta * 0.18);
+          ? Math.max(1.5, delta * 0.4)
+          : Math.max(0.15, delta * 0.12);
 
-        return Math.min(100, prev + easedStep);
+        const next = Math.min(100, prev + easedStep);
+        // Update high-water mark
+        highWaterRef.current = Math.max(highWaterRef.current, next);
+        return next;
       });
     }, 120);
 
@@ -190,8 +192,9 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     setPhase('启动中');
     setDetail('正在启动扫描...');
     setDisplayProgress(3);
-    rawPhaseRef.current = 'scouting';
+    rawPhaseRef.current = 'refreshing';
     actualProgressRef.current = 3;
+    highWaterRef.current = 3;
     serverTickRef.current = Date.now();
     setElapsed(0);
 
@@ -252,6 +255,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
             const pct = phaseToProgress(data.phase, lastTotal, lastCompleted);
             actualProgressRef.current = Math.max(actualProgressRef.current, pct);
+            highWaterRef.current = Math.max(highWaterRef.current, actualProgressRef.current);
             serverTickRef.current = Date.now();
 
             if (data.phase === 'done') {
