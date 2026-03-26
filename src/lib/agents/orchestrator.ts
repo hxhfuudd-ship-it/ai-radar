@@ -8,7 +8,7 @@ import { getRepoDetail, getRepoReadme } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
 
 export interface ScanProgress {
-  phase: 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
+  phase: 'refreshing' | 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
   total: number;
   completed: number;
   current?: string;
@@ -22,7 +22,7 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     await cleanupOldProjects();
 
     onProgress?.({
-      phase: 'scouting',
+      phase: 'refreshing',
       total: 0,
       completed: 0,
       current: '刷新已有项目数据...',
@@ -383,7 +383,7 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
         } finally {
           completed += 1;
           onProgress?.({
-            phase: 'scouting',
+            phase: 'refreshing',
             total: trackedProjects.length,
             completed,
             current: `已刷新 ${completed}/${trackedProjects.length} 个已有项目`,

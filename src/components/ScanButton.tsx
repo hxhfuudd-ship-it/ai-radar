@@ -36,14 +36,17 @@ function formatElapsed(ms: number): string {
 }
 
 function phaseToProgress(phase: string, total: number, completed: number): number {
-  if (phase === 'scouting') return 10;
+  // refreshing: 0–10%, scouting: 10–15%, fetching: 15–35%, analyzing: 35–98%, done: 100%
+  if (phase === 'refreshing') return Math.round(total > 0 ? (completed / total) * 10 : 2);
+  if (phase === 'scouting') return 12;
   if (phase === 'fetching') return Math.round(15 + (total > 0 ? completed / total : 0) * 20);
-  if (phase === 'analyzing') return Math.round(35 + (total > 0 ? completed / total : 0) * 60);
+  if (phase === 'analyzing') return Math.round(35 + (total > 0 ? completed / total : 0) * 63);
   if (phase === 'done') return 100;
   return 0;
 }
 
 const PHASE_LABEL: Record<string, string> = {
+  refreshing: '刷新中',
   scouting: '搜索中',
   fetching: '获取 README',
   analyzing: 'AI 分析中',
@@ -73,6 +76,7 @@ function formatLastScan(iso: string): string {
 }
 
 function phaseSoftCap(phase: string): number {
+  if (phase === 'refreshing') return 10;
   if (phase === 'scouting') return 14;
   if (phase === 'fetching') return 34;
   if (phase === 'analyzing') return 96;
@@ -165,15 +169,14 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
       setDisplayProgress(prev => {
         const delta = target - prev;
+        if (delta <= 0) return prev;  // NEVER go backward
         if (Math.abs(delta) < 0.15) return target;
 
         const easedStep = rawPhase === 'done'
           ? Math.max(1.2, delta * 0.35)
-          : delta > 0
-            ? Math.max(0.2, delta * 0.18)
-            : delta * 0.25;
+          : Math.max(0.2, delta * 0.18);
 
-        return Math.min(100, Math.max(0, prev + easedStep));
+        return Math.min(100, prev + easedStep);
       });
     }, 120);
 
@@ -248,7 +251,7 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
             lastTotal = data.total ?? 0;
 
             const pct = phaseToProgress(data.phase, lastTotal, lastCompleted);
-            actualProgressRef.current = pct;
+            actualProgressRef.current = Math.max(actualProgressRef.current, pct);
             serverTickRef.current = Date.now();
 
             if (data.phase === 'done') {
