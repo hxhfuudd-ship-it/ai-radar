@@ -46,9 +46,12 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   messagesRef.current = messages;
 
   const scrollToBottom = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -118,7 +121,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+      const timeout = setTimeout(() => controller.abort(), 60000);
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

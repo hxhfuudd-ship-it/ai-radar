@@ -20,22 +20,15 @@ const QUICK_QUESTIONS = [
   '有哪些类似的替代方案？',
 ];
 
-const PROJECT_LOADING_STEPS = [
-  { title: '理解问题', hint: '识别你关注的是场景、架构还是对比' },
-  { title: '补充资料', hint: '必要时检索外部信息做交叉参考' },
-  { title: '整理上下文', hint: '结合项目摘要、分析和历史对话' },
-  { title: '生成回答', hint: '组织重点并准备可执行建议' },
-];
-
-function resolveProjectStep(status: string | undefined, elapsed: number): number {
-  if (status?.includes('理解')) return 0;
-  if (status?.includes('搜索') || status?.includes('资料')) return 1;
-  if (status?.includes('整理') || status?.includes('上下文')) return 2;
-  if (status?.includes('生成') || status?.includes('草稿')) return 3;
-  if (elapsed < 3) return 0;
-  if (elapsed < 8) return 1;
-  if (elapsed < 15) return 2;
-  return 3;
+/** Map backend status text to a short user-friendly label */
+function friendlyStatus(status: string | undefined): string {
+  if (!status) return '思考中';
+  if (status.includes('理解')) return '理解问题';
+  if (status.includes('搜索') || status.includes('资料')) return '检索资料';
+  if (status.includes('整理') || status.includes('上下文')) return '整理上下文';
+  if (status.includes('生成') || status.includes('草稿')) return '生成回答';
+  // Strip "正在" prefix for cleaner display
+  return status.replace(/^正在/, '').replace(/\.{2,}$/, '');
 }
 
 interface ProjectChatProps {
@@ -100,7 +93,7 @@ export function ProjectChat({ project }: ProjectChatProps) {
         </Button>
       </div>
 
-      <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto p-4 sm:max-h-[400px]">
+      <div ref={scrollRef} className="chat-scroll-area overflow-y-auto p-4">
         <div className="space-y-3">
           {messages.length === 0 ? (
             <div className="py-4 text-center">
@@ -121,105 +114,52 @@ export function ProjectChat({ project }: ProjectChatProps) {
             </div>
           ) : null}
           {messages.map(msg => (
-            (() => {
-              const currentStep = resolveProjectStep(msg.status, elapsed);
-              const liveStatus = msg.status ?? `${PROJECT_LOADING_STEPS[currentStep].title}中...`;
-              const current = PROJECT_LOADING_STEPS[currentStep];
-              const stepProgress = Math.round(((currentStep + 1) / PROJECT_LOADING_STEPS.length) * 100);
-
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${
-                      msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    {msg.role === 'assistant' ? (
-                      msg.content ? (
-                        <div className="space-y-2">
-                          {!msg.done ? (
-                            <div className="flex items-center gap-2 text-[11px] text-primary">
-                              <span className="thinking-orbit inline-flex h-2 w-2 rounded-full bg-primary/90" />
-                              <span>{msg.status ?? '正在逐步回答...'}</span>
-                              <span className="text-muted-foreground">
-                                {elapsed > 0 ? `· ${elapsed}s` : ''}
-                              </span>
-                            </div>
-                          ) : null}
-
-                          <div className={msg.done ? '' : 'content-appear'}>
-                            <MarkdownContent
-                              content={msg.content}
-                              className="text-sm"
-                              isStreaming={!msg.done}
-                            />
-                          </div>
-
-                          {!msg.done ? (
-                            <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
-                              <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
-                            </div>
-                          ) : null}
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${
+                  msg.role === 'user'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted'
+                }`}
+              >
+                {msg.role === 'assistant' ? (
+                  msg.content ? (
+                    <div className="space-y-1.5">
+                      {!msg.done ? (
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <span className="thinking-orbit inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                          <span>正在回答{elapsed > 0 ? ` · ${elapsed}s` : ''}</span>
                         </div>
-                      ) : !msg.done ? (
-                        <div className="space-y-2.5 py-1">
-                          <div className="flex items-center gap-2 text-xs text-primary">
-                            <span className="thinking-orbit inline-flex h-2.5 w-2.5 rounded-full bg-primary/90" />
-                            <span>{liveStatus}</span>
-                          </div>
+                      ) : null}
 
-                          <div className="rounded-md border border-primary/20 bg-background/60 px-2.5 py-2">
-                            <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <div className="flex gap-1">
-                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
-                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
-                                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
-                              </div>
-                              <span>AI 正在处理{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                              <span className="inline-flex items-center gap-1">
-                                <span className="thinking-pulse inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                                当前步骤 {currentStep + 1}/{PROJECT_LOADING_STEPS.length}
-                              </span>
-                              <span>{stepProgress}%</span>
-                            </div>
-
-                            <div className="mt-1.5">
-                              <p className="text-[12px] font-medium leading-tight text-foreground">
-                                {current.title}
-                              </p>
-                              <p className="mt-0.5 text-[10px] text-muted-foreground/90">
-                                {current.hint}
-                              </p>
-                            </div>
-
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted-foreground/10">
-                              <div
-                                className="h-full rounded-full bg-primary/70 transition-[width] duration-300 ease-out"
-                                style={{ width: `${stepProgress}%` }}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted-foreground/10">
-                            <div className="thinking-shimmer h-full w-1/3 rounded-full bg-primary/30" />
-                          </div>
-                        </div>
-                      ) : null
-                    ) : (
-                      <div className="text-sm leading-relaxed">{msg.content}</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()
+                      <div className={msg.done ? '' : 'content-appear'}>
+                        <MarkdownContent
+                          content={msg.content}
+                          className="text-sm"
+                          isStreaming={!msg.done}
+                        />
+                      </div>
+                    </div>
+                  ) : !msg.done ? (
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="flex gap-1">
+                        <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                        <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                        <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-foreground/40" />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {friendlyStatus(msg.status)}{elapsed > 0 ? ` · ${elapsed}s` : ''}
+                      </span>
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="text-sm leading-relaxed">{msg.content}</div>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       </div>

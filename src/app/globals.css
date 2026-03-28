@@ -144,6 +144,12 @@
   .safe-bottom-pad {
     padding-bottom: 0.75rem;
   }
+
+  .chat-scroll-area {
+    max-height: min(60vh, 400px);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
 }
 
 @supports (padding: env(safe-area-inset-bottom)) {

@@ -1,4 +1,5 @@
 import type { AgentConfig, AnalysisResult, RawProject } from './types';
+import { defaultProvider, getProviderConfig, type LLMProvider } from '../config';
 import { getSkill } from '../skills';
 import { chat, systemMessage, userMessage } from '../llm';
 
@@ -6,9 +7,34 @@ const config: AgentConfig = {
   name: 'Analyst',
   role: '技术分析师',
   provider: 'custom',
-  model: process.env.ANALYST_MODEL || 'deepseek-v3.2',
+  model: process.env.ANALYST_MODEL || 'deepseek-chat',
   systemPrompt: '你是 AI Radar 的技术分析师。',
 };
+
+function hasUsableModel(provider: LLMProvider, model: string): boolean {
+  const providerConfig = getProviderConfig(provider);
+
+  if (!providerConfig.apiKey.trim()) return false;
+  if (!model.trim()) return false;
+  if (provider === 'custom' && !providerConfig.baseURL.trim()) return false;
+
+  return true;
+}
+
+export function canAnalyzeProject(): boolean {
+  const readerSkill = getSkill('repo-reader');
+  const summarizerSkill = getSkill('summarizer');
+
+  if (!readerSkill || !summarizerSkill) return false;
+
+  const readerProvider = readerSkill.provider ?? config.provider ?? defaultProvider;
+  const readerModel = readerSkill.model ?? config.model ?? '';
+  const summarizerProvider = summarizerSkill.provider ?? config.provider ?? defaultProvider;
+  const summarizerConfig = getProviderConfig(summarizerProvider);
+  const summarizerModel = summarizerSkill.model ?? summarizerConfig.models.fast;
+
+  return hasUsableModel(readerProvider, readerModel) && hasUsableModel(summarizerProvider, summarizerModel);
+}
 
 export async function analyzeProject(project: RawProject, readme: string): Promise<AnalysisResult> {
 
@@ -58,7 +84,34 @@ export async function analyzeProject(project: RawProject, readme: string): Promi
   };
 }
 
-function extractTags(project: RawProject, analysis: string): string[] {
+export function buildFallbackSummary(project: RawProject): string {
+  const parts = [
+    project.description?.trim(),
+    project.language ? `主要语言：${project.language}` : null,
+    project.topics.length > 0 ? `标签：${project.topics.slice(0, 4).join(' / ')}` : null,
+    `GitHub 数据：${project.stars} Stars，${project.forks} Forks。`,
+  ].filter(Boolean);
+
+  return parts.join(' ');
+}
+
+export function buildFallbackAnalysis(project: RawProject): string {
+  const lines = [
+    'AI 分析暂不可用，当前展示的是基于 GitHub 元数据生成的基础档案。',
+    `项目名称：${project.fullName}`,
+    `仓库地址：${project.url}`,
+    project.description ? `项目描述：${project.description}` : '项目描述：仓库未提供描述。',
+    `社区热度：${project.stars} Stars，${project.forks} Forks。`,
+    project.language ? `主要语言：${project.language}` : null,
+    project.topics.length > 0 ? `标签：${project.topics.join(', ')}` : null,
+    `仓库创建时间：${new Date(project.createdAt).toLocaleDateString('zh-CN')}`,
+    `最近更新时间：${new Date(project.updatedAt).toLocaleDateString('zh-CN')}`,
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}
+
+export function extractTags(project: RawProject, analysis: string): string[] {
   const tagSet = new Set<string>();
 
   for (const topic of project.topics) {

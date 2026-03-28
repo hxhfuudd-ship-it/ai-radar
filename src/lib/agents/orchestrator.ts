@@ -1,6 +1,13 @@
 import { v4 as uuid } from 'uuid';
 import { runScout } from './scout';
-import { analyzeProject, computeProjectScore } from './analyst';
+import {
+  analyzeProject,
+  buildFallbackAnalysis,
+  buildFallbackSummary,
+  canAnalyzeProject,
+  computeProjectScore,
+  extractTags,
+} from './analyst';
 import type { RawProject } from './types';
 import { db, schema } from '../db';
 import { eq, lt } from 'drizzle-orm';
@@ -8,7 +15,7 @@ import { getRepoDetail, getRepoReadme } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
 
 export interface ScanProgress {
-  phase: 'refreshing' | 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
+  phase: 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
   total: number;
   completed: number;
   current?: string;
@@ -17,12 +24,22 @@ export interface ScanProgress {
 
 type ProgressCallback = (progress: ScanProgress) => void;
 
+export interface ScanSummary {
+  projectsFound: number;
+  savedProjects: number;
+  analyzedProjects: number;
+  analysisFailures: number;
+  skippedProjects: number;
+  scannedAt: string;
+  message: string;
+}
+
 export async function runFullScan(onProgress?: ProgressCallback, force = false) {
   try {
     await cleanupOldProjects();
 
     onProgress?.({
-      phase: 'refreshing',
+      phase: 'scouting',
       total: 0,
       completed: 0,
       current: '刷新已有项目数据...',
@@ -37,6 +54,7 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     const dedupedProjects = dedup(projects);
     const needAnalysis: RawProject[] = [];
     const skipped: string[] = [];
+    const analysisEnabled = canAnalyzeProject();
 
     for (const p of dedupedProjects) {
       const existing = await db
@@ -88,60 +106,72 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
     }
 
     if (needAnalysis.length === 0) {
+      const message = `找到 ${dedupedProjects.length} 个项目，全部已是最新`;
       onProgress?.({
         phase: 'done',
         total: dedupedProjects.length,
-        completed: dedupedProjects.length,
-        current: `找到 ${dedupedProjects.length} 个项目，全部已是最新`,
+        completed: 0,
+        current: message,
       });
       return {
         projectsFound: dedupedProjects.length,
-        newAnalyzed: 0,
+        savedProjects: 0,
+        analyzedProjects: 0,
+        analysisFailures: 0,
+        skippedProjects: skipped.length,
         scannedAt: scanResult.scannedAt,
+        message,
       };
     }
 
-    onProgress?.({
-      phase: 'fetching',
-      total: needAnalysis.length,
-      completed: 0,
-      current: `获取 ${needAnalysis.length} 个项目的 README...`,
-    });
-
     const readmeMap = new Map<string, string>();
-    let fetched = 0;
-    const README_BATCH = 8;
-    for (let i = 0; i < needAnalysis.length; i += README_BATCH) {
-      const batch = needAnalysis.slice(i, i + README_BATCH);
-      await Promise.all(
-        batch.map(async (project) => {
-          try {
-            const readme = await getRepoReadme(project.fullName);
-            readmeMap.set(project.fullName, readme);
-          } catch {
-            readmeMap.set(project.fullName, '');
-          }
+    if (analysisEnabled) {
+      onProgress?.({
+        phase: 'fetching',
+        total: needAnalysis.length,
+        completed: 0,
+        current: `获取 ${needAnalysis.length} 个项目的 README...`,
+      });
 
-          fetched += 1;
-          onProgress?.({
-            phase: 'fetching',
-            total: needAnalysis.length,
-            completed: fetched,
-            current: `已获取 ${fetched}/${needAnalysis.length} 个 README`,
-          });
-        })
-      );
+      let fetched = 0;
+      const README_BATCH = 8;
+      for (let i = 0; i < needAnalysis.length; i += README_BATCH) {
+        const batch = needAnalysis.slice(i, i + README_BATCH);
+        await Promise.all(
+          batch.map(async (project) => {
+            try {
+              const readme = await getRepoReadme(project.fullName);
+              readmeMap.set(project.fullName, readme);
+            } catch {
+              readmeMap.set(project.fullName, '');
+            }
+
+            fetched += 1;
+            onProgress?.({
+              phase: 'fetching',
+              total: needAnalysis.length,
+              completed: fetched,
+              current: `已获取 ${fetched}/${needAnalysis.length} 个 README`,
+            });
+          })
+        );
+      }
     }
 
     onProgress?.({
       phase: 'analyzing',
       total: needAnalysis.length,
       completed: 0,
-      current: `开始 AI 深度分析...`,
+      current: analysisEnabled
+        ? '开始 AI 深度分析...'
+        : '未检测到 AI 配置，正在保存项目基础信息...',
     });
 
     const CONCURRENCY = APP_CONFIG.analysisConcurrency;
     let completed = 0;
+    let savedProjects = 0;
+    let analyzedProjects = 0;
+    let analysisFailures = 0;
 
     for (let i = 0; i < needAnalysis.length; i += CONCURRENCY) {
       const batch = needAnalysis.slice(i, i + CONCURRENCY);
@@ -150,14 +180,17 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
         phase: 'analyzing',
         total: needAnalysis.length,
         completed,
-        current: `正在分析：${names}`,
+        current: analysisEnabled ? `正在分析：${names}` : `正在保存：${names}`,
       });
 
       await Promise.all(
         batch.map(async (project) => {
           try {
             const readme = readmeMap.get(project.fullName) ?? '';
-            await processProject(project, scanResult.scannedAt, readme);
+            const result = await processProject(project, scanResult.scannedAt, readme, analysisEnabled);
+            if (result.saved) savedProjects += 1;
+            if (result.analyzed) analyzedProjects += 1;
+            if (result.analysisFailed) analysisFailures += 1;
           } catch (err) {
             console.error(`Failed: ${project.fullName}`, err);
           } finally {
@@ -166,23 +199,36 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
               phase: 'analyzing',
               total: needAnalysis.length,
               completed,
-              current: `已完成 ${completed}/${needAnalysis.length}：${project.name}`,
+              current: analysisEnabled
+                ? `已处理 ${completed}/${needAnalysis.length}：${project.name}`
+                : `已保存 ${completed}/${needAnalysis.length}：${project.name}`,
             });
           }
         })
       );
     }
 
+    const message = !analysisEnabled
+      ? `AI 未配置，已保存 ${savedProjects} 个项目基础信息`
+      : analysisFailures > 0
+        ? `已保存 ${savedProjects} 个项目，AI 分析成功 ${analyzedProjects} 个，失败 ${analysisFailures} 个`
+        : `已保存 ${savedProjects} 个项目，AI 分析完成 ${analyzedProjects} 个`;
+
     onProgress?.({
       phase: 'done',
-      total: needAnalysis.length,
-      completed: needAnalysis.length,
+      total: dedupedProjects.length,
+      completed: savedProjects,
+      current: message,
     });
 
     return {
-      projectsFound: projects.length,
-      newAnalyzed: needAnalysis.length,
+      projectsFound: dedupedProjects.length,
+      savedProjects,
+      analyzedProjects,
+      analysisFailures,
+      skippedProjects: skipped.length,
       scannedAt: scanResult.scannedAt,
+      message,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -191,14 +237,23 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
   }
 }
 
-async function processProject(project: RawProject, scannedAt: string, readme: string) {
+interface ProcessProjectResult {
+  saved: boolean;
+  analyzed: boolean;
+  analysisFailed: boolean;
+}
+
+async function processProject(
+  project: RawProject,
+  scannedAt: string,
+  readme: string,
+  analysisEnabled: boolean,
+): Promise<ProcessProjectResult> {
   const existing = await db
     .select()
     .from(schema.projects)
     .where(eq(schema.projects.fullName, project.fullName))
     .get();
-
-  const analysis = await analyzeProject(project, readme);
 
   const record = {
     id: existing?.id ?? uuid(),
@@ -210,14 +265,34 @@ async function processProject(project: RawProject, scannedAt: string, readme: st
     forks: project.forks,
     language: project.language,
     topics: project.topics.join(','),
+    readme: readme || existing?.readme || null,
     repoCreatedAt: project.createdAt,
     repoUpdatedAt: project.updatedAt,
-    summary: analysis.summary,
-    analysis: analysis.analysis,
-    score: analysis.score,
+    summary: existing?.summary ?? buildFallbackSummary(project),
+    analysis: existing?.analysis ?? buildFallbackAnalysis(project),
+    score: existing?.score ?? computeProjectScore(project, ''),
     discoveredAt: existing?.discoveredAt ?? scannedAt,
-    analyzedAt: new Date().toISOString(),
+    analyzedAt: existing?.analyzedAt ?? null,
   };
+
+  let tagNames = extractTags(project, existing?.analysis ?? '');
+  let analyzed = false;
+  let analysisFailed = false;
+
+  if (analysisEnabled) {
+    try {
+      const analysis = await analyzeProject(project, readme);
+      record.summary = analysis.summary;
+      record.analysis = analysis.analysis;
+      record.score = analysis.score;
+      record.analyzedAt = new Date().toISOString();
+      tagNames = analysis.tags;
+      analyzed = true;
+    } catch (err) {
+      analysisFailed = true;
+      console.error(`AI analysis failed for ${project.fullName}`, err);
+    }
+  }
 
   if (existing) {
     await db.update(schema.projects)
@@ -228,7 +303,17 @@ async function processProject(project: RawProject, scannedAt: string, readme: st
     await db.insert(schema.projects).values(record).run();
   }
 
-  for (const tagName of analysis.tags) {
+  await upsertProjectTags(record.id, tagNames);
+
+  return {
+    saved: true,
+    analyzed,
+    analysisFailed,
+  };
+}
+
+async function upsertProjectTags(projectId: string, tagNames: string[]) {
+  for (const tagName of tagNames) {
     let tag = await db
       .select()
       .from(schema.tags)
@@ -248,13 +333,13 @@ async function processProject(project: RawProject, scannedAt: string, readme: st
       const links = await db
         .select()
         .from(schema.projectTags)
-        .where(eq(schema.projectTags.projectId, record.id))
+        .where(eq(schema.projectTags.projectId, projectId))
         .all();
       const existingLink = links.find(pt => pt.tagId === tag!.id);
 
       if (!existingLink) {
         await db.insert(schema.projectTags)
-          .values({ projectId: record.id, tagId: tag.id })
+          .values({ projectId, tagId: tag.id })
           .run();
       }
     }
@@ -383,7 +468,7 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
         } finally {
           completed += 1;
           onProgress?.({
-            phase: 'refreshing',
+            phase: 'scouting',
             total: trackedProjects.length,
             completed,
             current: `已刷新 ${completed}/${trackedProjects.length} 个已有项目`,

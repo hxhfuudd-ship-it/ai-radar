@@ -49,9 +49,11 @@ User clicks 扫描
 | Agent | Model | Task |
 |-------|-------|------|
 | Scout | 无LLM | GitHub 搜索 + 本地打分 |
-| Analyst | `ANALYST_MODEL` (deepseek-v3.2) | 深度分析 + 摘要 |
-| Advisor | `ADVISOR_MODEL` (kimi-k2.5) | 全局对话顾问，可委派 Analyst |
-| ProjectChat | `PROJECT_CHAT_MODEL` | 单项目问答 |
+| Analyst | `deepseek-chat` | 深度分析 + 摘要 |
+| Advisor | `deepseek-chat` | 全局对话顾问，可委派 Analyst |
+| ProjectChat | `deepseek-chat` | 单项目问答 |
+
+所有 LLM 调用统一走 DeepSeek API（`https://api.deepseek.com/v1`），单一模型 `deepseek-chat`。
 
 ## File Map
 ```
@@ -117,58 +119,21 @@ src/hooks/
 | `skipIfAnalyzedWithinDays` | 1 | 1天内已分析则跳过（force扫描可覆盖）|
 | `projectRetentionDays` | 365 | 超过365天的项目自动清理（收藏项目保留）|
 
-## Latest Session (2026-03-22)
-- 首页已补分页：`src/app/page.tsx` 新增 `PAGE_SIZE=12`、页码切换、总数展示，并在搜索/标签/模式变化时自动回到第1页。
-- 修复首页筛选请求 bug：原先 `selectedTag !== undefined` 实际几乎恒为真，导致搜索防抖/即时请求逻辑异常；现已按 `modeChanged || tagChanged` 正确分流。
-- `src/app/api/projects/route.ts` 已加固分页参数，`limit/offset` 会做边界和整数化处理；tag 过滤改成 `projects + project_tags + tags` join，`total` 使用 `countDistinct(projects.id)`，避免先查 tag 再拼 projectIds 的低效方案。
-- `src/app/api/tags/route.ts` 的 hot 模式已从多次串行查询改为一次 join/groupBy 查询，只返回近 90 天项目实际使用到的标签。
-- 构建稳定性已修复：`src/app/layout.tsx` / `src/app/globals.css` 不再依赖 `next/font/google`，避免离线或受限网络下 dev/build 卡住。
-- 项目详情分析报告显示已优化：`src/app/project/[id]/client.tsx` 会把 `【标题】` 转成 Markdown 标题，阅读性更好。
-- 聊天链路已增强：
-  - `src/hooks/useChatStream.ts` 增加 30 秒超时、API Key 失效提示、服务端错误透传。
-  - `src/app/api/chat/route.ts` 会把真实异常写日志并通过 SSE 返回，不再统一吞成模糊报错。
-- 这次“AI 问答不好使”的根因已确认不是后端或模型，而是本地 `.next/dev` 里混入了旧编译产物，甚至仍引用 `/Users/wanghao/Desktop/my_own_project` 和旧前端报错文案 `抱歉，出现了错误。请稍后重试。`，导致浏览器实际跑的是陈旧 bundle。
-- 额外排障结论：Tailwind CSS v4 会自动扫描项目根目录中的文本文件；如果把旧编译目录以 `.next-stale-*` 的形式留在仓库内，里面残留的旧 HTML/JS/CSS 类名也会被再次扫描，重新生成损坏规则，导致 `globals.css` 在 dev 阶段继续报 `Parsing CSS source code failed`。
-- 已采取的修复动作：
-  - 杀掉旧 `next dev` 进程。
-  - 将旧 `.next` 挪到 `.next-stale-20260322-chat-fix/` 备份。
-  - 重新启动当前仓库的 `npm run dev`，当前应从 `http://localhost:3000` 访问。
-  - `public/sw.js` 和 `src/components/ServiceWorkerRegister.tsx` 已处理开发环境下的 Service Worker 注销和缓存清理，避免再次缓存旧资源。
-  - 后续已把 `.next-stale-20260322-chat-fix/`、`.next-stale-20260322-css-fix/` 移出仓库到 `/tmp/ai-radar-stale-builds/`，并在 `.gitignore` 增加 `/.next-stale-*/`，避免再次被 Tailwind 扫描。
-- 已验证结果：
-  - `npm run lint` 通过。
-  - `npm run build` 通过。
-  - 本地 `curl http://127.0.0.1:3000/api/chat` 已验证可正常流式返回项目问答。
-  - 截图里同一问题“适合什么场景使用？”对 `googleworkspace/cli` 已能正确回答。
+## Resolved Issues (2026-03-22)
+- 首页分页、筛选请求、API 分页参数、tags 查询优化 — 均已修复
+- 构建不再依赖 `next/font/google`，离线可 build
+- 聊天链路增强：30 秒超时、API Key 失效提示、服务端错误透传
+- `.next` 旧编译产物 + Tailwind v4 扫描冲突问题已解决（`.gitignore` 已加 `/.next-stale-*/`）
+- Service Worker 开发环境自动注销，避免缓存旧资源
 
-## Current Follow-up
-- 浏览器侧若还看到旧问答报错，优先关闭旧标签页，重新打开 `http://localhost:3000`，或至少强刷，确保不再使用旧内存中的 JS bundle。
-- `.next-stale-20260322-chat-fix/` 是这次排障保留的旧编译目录；确认一切稳定后可以删除。
-- `comparatorSkill` 仍已定义但尚未接入 Advisor，对比能力目前仍走 Analyst 直接分析。
+## Current Status (2026-03-26)
+- 本地 AI 对话功能已测试正常（Advisor 全局对话 + ProjectChat 项目问答均可用）
+- 本地扫描、项目列表、详情、收藏等功能正常
+- `comparatorSkill` 已定义但尚未接入 Advisor，对比能力走 Analyst 直接分析
 
-## Production Follow-up (2026-03-22)
-- 已把线上相关修复提交并推送到 GitHub `main`，用于触发 Vercel 自动部署。部署提交为 `b201c0b`：`fix: stabilize production chat and feed experience`。
-- 推送前已验证：
-  - `npm run lint` 通过
-  - `npm run build` 通过
-- 线上问题进一步定位后，确认生产站项目问答失败的根因不是前端缓存，也不是当前代码逻辑，而是 Vercel 生产环境调用上游模型时返回了 `401 The API key doesn't exist`。
-- 结合代码路径可确认，项目问答走的是 `custom` provider：
-  - `src/lib/agents/advisor.ts`
-  - `src/lib/config.ts`
-  - `src/lib/llm.ts`
-- 因此生产环境最关键的变量是：
-  - `DEFAULT_PROVIDER`
-  - `CUSTOM_BASE_URL`
-  - `CUSTOM_API_KEY`
-  - `CUSTOM_MODEL_FAST`
-  - `CUSTOM_MODEL_SMART`
-  - `PROJECT_CHAT_MODEL`
-  - `ADVISOR_MODEL`
-  - `ANALYST_MODEL`
-- 本地 `localhost:3000` 能正常回答，说明 `.env.local` 的这套值是可用的；生产站报 401，说明 Vercel 上至少 `CUSTOM_API_KEY` 已失效、填错，或和 `CUSTOM_BASE_URL` / 模型配置不匹配。
-- 本轮未直接修复 Vercel env：当前机器没有可用的 Vercel 登录凭据，无法直接改线上环境变量；走的是 `git push origin main` 触发自动部署这条链路。
-- 远程连通性补充：
-  - `myownproject-pi.vercel.app` 域名解析正常
-  - 但当前执行环境对该域名的 HTTP 探测超时，无法在本机稳定完成最终线上回包校验
-- 本轮还做过一半的想法但未落地：准备给 `projectContext` 问答加“上游 API Key 失效时的本地摘要/分析兜底回答”，这样即使生产 key 有问题，项目页也不至于直接报错；用户中途打断，尚未实现。
-- 注意：当前仓库头部已不是 `b201c0b`，而是后续的 `dfe3497`（提交信息为 `1`）。这次生产排障结论仍然成立，但如果后续继续改线上问题，需要先看 `dfe3497` 是否又改动了部署相关内容。
+## Production Status
+- 部署在 Vercel：`myownproject-pi.vercel.app`
+- 浏览项目、详情、收藏等非 LLM 功能正常
+- LLM 相关功能（AI 对话、扫描分析）需要 Vercel 后台环境变量正确配置，之前曾报 `401 API key doesn't exist`
+- 待办：在 Vercel Dashboard 更新 `CUSTOM_API_KEY` 等环境变量以恢复线上 AI 功能
+- 待办（未落地）：给项目问答加 API Key 失效时的本地兜底回答

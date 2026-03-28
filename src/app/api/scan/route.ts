@@ -46,11 +46,13 @@ export async function POST(req: NextRequest) {
         send({
           phase: 'done',
           total: result.projectsFound,
-          completed: result.newAnalyzed,
+          completed: result.savedProjects,
+          saved: result.savedProjects,
+          analyzed: result.analyzedProjects,
+          failed: result.analysisFailures,
+          skipped: result.skippedProjects,
           scannedAt: result.scannedAt,
-          current: result.newAnalyzed === 0
-            ? `找到 ${result.projectsFound} 个项目，全部已是最新`
-            : `新分析了 ${result.newAnalyzed} 个项目（共 ${result.projectsFound} 个）`,
+          current: result.message,
         });
         lastScanAt = result.scannedAt;
       } catch (err) {

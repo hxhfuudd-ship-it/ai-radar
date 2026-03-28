@@ -26,7 +26,7 @@ const ScanContext = createContext<{
     showForce: false,
     lastScanAt: null,
   },
-  startScan: () => {},
+  startScan: () => { },
 });
 
 function formatElapsed(ms: number): string {
@@ -36,17 +36,14 @@ function formatElapsed(ms: number): string {
 }
 
 function phaseToProgress(phase: string, total: number, completed: number): number {
-  // refreshing: 0–10%, scouting: 10–15%, fetching: 15–35%, analyzing: 35–98%, done: 100%
-  if (phase === 'refreshing') return Math.round(total > 0 ? (completed / total) * 10 : 2);
-  if (phase === 'scouting') return 12;
+  if (phase === 'scouting') return 10;
   if (phase === 'fetching') return Math.round(15 + (total > 0 ? completed / total : 0) * 20);
-  if (phase === 'analyzing') return Math.round(35 + (total > 0 ? completed / total : 0) * 63);
+  if (phase === 'analyzing') return Math.round(35 + (total > 0 ? completed / total : 0) * 60);
   if (phase === 'done') return 100;
   return 0;
 }
 
 const PHASE_LABEL: Record<string, string> = {
-  refreshing: '刷新中',
   scouting: '搜索中',
   fetching: '获取 README',
   analyzing: 'AI 分析中',
@@ -75,6 +72,14 @@ function formatLastScan(iso: string): string {
   });
 }
 
+function phaseSoftCap(phase: string): number {
+  if (phase === 'scouting') return 14;
+  if (phase === 'fetching') return 34;
+  if (phase === 'analyzing') return 96;
+  if (phase === 'done') return 100;
+  return 6;
+}
+
 // ---- Provider ----
 export function ScanProvider({ onComplete, children }: { onComplete?: () => void; children: React.ReactNode }) {
   const [isScanning, setIsScanning] = useState(false);
@@ -90,9 +95,6 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
   const rawPhaseRef = useRef('');
   const actualProgressRef = useRef(0);
   const serverTickRef = useRef(0);
-  // This ref holds the monotonically-increasing displayed value.
-  // It is the SINGLE source of truth for "what the user has seen".
-  const displayedRef = useRef(0);
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -123,17 +125,14 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
           localStorage.setItem(LAST_SCAN_STORAGE_KEY, serverValue);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
     if (!isScanning && (phase === '完成' || phase === '失败')) {
       const delay = phase === '完成' ? 8000 : 5000;
       const t = setTimeout(() => {
-        setPhase(''); setDetail('');
-        displayedRef.current = 0;
-        setDisplayProgress(0);
-        setElapsed(0);
+        setPhase(''); setDetail(''); setDisplayProgress(0); setElapsed(0);
       }, delay);
       return () => clearTimeout(t);
     }
@@ -141,7 +140,6 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
   useEffect(() => {
     if (!isScanning && phase === '完成') {
-      displayedRef.current = 100;
       setDisplayProgress(100);
     }
   }, [isScanning, phase]);
@@ -151,21 +149,32 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
 
     const tick = setInterval(() => {
       const rawPhase = rawPhaseRef.current;
-      // The target is always the server-reported actual progress (already monotonic via Math.max)
-      const target = rawPhase === 'done' ? 100 : actualProgressRef.current;
-      const current = displayedRef.current;
+      const actual = actualProgressRef.current;
+      const idleMs = Date.now() - serverTickRef.current;
+      let target = actual;
 
-      if (target <= current) return; // Nothing to do, already at or beyond target
+      if (rawPhase !== 'done' && rawPhase !== 'error') {
+        const cap = phaseSoftCap(rawPhase);
+        if (idleMs > 700 && actual < cap) {
+          const optimistic = Math.min(cap, actual + (idleMs - 700) / 240);
+          target = Math.max(target, optimistic);
+        }
+      } else if (rawPhase === 'done') {
+        target = 100;
+      }
 
-      // Smoothly ease toward the target
-      const delta = target - current;
-      const step = rawPhase === 'done'
-        ? Math.max(1.5, delta * 0.4)
-        : Math.max(0.15, delta * 0.12);
+      setDisplayProgress(prev => {
+        // Never go backwards — progress bar only moves forward
+        if (target <= prev) return prev;
+        const delta = target - prev;
+        if (delta < 0.15) return target;
 
-      const next = Math.min(100, current + step);
-      displayedRef.current = next;
-      setDisplayProgress(next);
+        const easedStep = rawPhase === 'done'
+          ? Math.max(1.2, delta * 0.35)
+          : Math.max(0.2, delta * 0.18);
+
+        return Math.min(100, prev + easedStep);
+      });
     }, 120);
 
     return () => clearInterval(tick);
@@ -178,9 +187,8 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
     setPhase('启动中');
     setDetail('正在启动扫描...');
     setDisplayProgress(3);
-    rawPhaseRef.current = 'refreshing';
+    rawPhaseRef.current = 'scouting';
     actualProgressRef.current = 3;
-    displayedRef.current = 3;
     serverTickRef.current = Date.now();
     setElapsed(0);
 
@@ -240,13 +248,15 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
             lastTotal = data.total ?? 0;
 
             const pct = phaseToProgress(data.phase, lastTotal, lastCompleted);
-            actualProgressRef.current = Math.max(actualProgressRef.current, pct);
+            // Only move forward — never let phase transitions pull progress back
+            if (pct > actualProgressRef.current) {
+              actualProgressRef.current = pct;
+            }
             serverTickRef.current = Date.now();
 
             if (data.phase === 'done') {
               actualProgressRef.current = 100;
               serverTickRef.current = Date.now();
-              displayedRef.current = 100;
               setDisplayProgress(100);
               if (typeof data.scannedAt === 'string' && data.scannedAt) {
                 streamScannedAt = data.scannedAt;
@@ -270,7 +280,6 @@ export function ScanProvider({ onComplete, children }: { onComplete?: () => void
         rawPhaseRef.current = 'done';
         actualProgressRef.current = 100;
         serverTickRef.current = Date.now();
-        displayedRef.current = 100;
         setDisplayProgress(100);
         const doneAt = new Date().toISOString();
         setLastScanAt(doneAt);
@@ -343,16 +352,16 @@ export function ScanProgress() {
         </div>
       ) : null}
       {!phase ? null : (
-      <div className="flex items-center gap-2 text-sm">
-        <span className={`font-semibold shrink-0 ${isError ? 'text-destructive' : 'text-primary'}`}>[{phase}]</span>
-        <span className="text-muted-foreground truncate min-w-0">{detail}</span>
-        {isScanning && elapsed > 0 && (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
-        )}
-        {isScanning && pct > 0 && pct < 100 && (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{pct}%</span>
-        )}
-      </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span className={`font-semibold shrink-0 ${isError ? 'text-destructive' : 'text-primary'}`}>[{phase}]</span>
+          <span className="text-muted-foreground truncate min-w-0">{detail}</span>
+          {isScanning && elapsed > 0 && (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
+          )}
+          {isScanning && pct > 0 && pct < 100 && (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{pct}%</span>
+          )}
+        </div>
       )}
       {showBar && (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
