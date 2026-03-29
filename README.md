@@ -1,108 +1,109 @@
 # AI Radar — 个人 AI 技术雷达
 
-自动追踪 GitHub 上最新的 AI 项目和技术动态，由多 Agent 协作完成情报收集、深度分析和个性化推荐。
+自动追踪 GitHub 上最新的 AI 项目，通过多 Agent 协作完成项目发现、深度分析和智能问答，帮助用户快速了解 AI 技术动态。
+
+**在线体验**: [myownproject-pi.vercel.app](https://myownproject-pi.vercel.app)
+
+## 功能特性
+
+- **自动扫描** — 从 GitHub 搜索最新 AI 项目，自动获取项目文档，由 AI 生成深度分析报告和摘要，按热度、活跃度、社区规模等维度自动打分
+- **AI 问答** — 支持针对单个项目的深度问答，以及跨项目的全局对话，AI 结合已有分析报告与实时网络搜索进行回答，支持流式输出
+- **项目浏览** — 标签筛选、关键词搜索、分页浏览，提供「近 90 天最热」与「AI 推荐」两种排序模式
+- **收藏管理** — 对感兴趣的项目添加收藏和备注
+- **多端访问** — 部署在 Vercel，手机浏览器直接访问
 
 ## 技术栈
 
-- **框架**: Next.js 16 (App Router, Turbopack)
-- **语言**: TypeScript
-- **UI**: TailwindCSS 4 + shadcn/ui
-- **数据库**: SQLite (better-sqlite3) + Drizzle ORM
-- **LLM**: 火山引擎 Coding Plan（OpenAI 兼容格式）
-- **MCP**: @modelcontextprotocol/sdk
+| 层 | 技术 |
+|----|------|
+| 框架 | Next.js 16 (App Router, Turbopack) + TypeScript |
+| UI | React 19 + TailwindCSS 4 + shadcn/ui |
+| 数据库 | SQLite (本地) / Turso (生产) + Drizzle ORM |
+| LLM | OpenAI 兼容接口（DeepSeek 等） |
+| 外部数据 | GitHub REST API + Tavily 网络搜索 |
+| 部署 | Vercel (Serverless) |
+
+## 多 Agent 架构
+
+```
+用户点击「扫描」
+    ↓
+Scout — 搜索 GitHub trending + topic，本地打分筛选（无 LLM）
+    ↓
+Orchestrator — 批量获取 README（8 并发）→ 分派 Analyst（5 并发）
+    ↓
+Analyst — 深度分析 + 摘要 → 自动打标签 + 评分 → 存入数据库
+    ↓
+前端 Feed 实时进度展示
+```
+
+| Agent | 职责 |
+|-------|------|
+| Scout | 搜索 GitHub，按 AI 关键词 + stars + forks 本地打分筛选 |
+| Analyst | 读取项目 README，生成深度分析报告（500-800 字）和摘要（100-200 字） |
+| Advisor | 全局对话顾问，搜索知识库回答问题，必要时委派 Analyst 做即时深度分析 |
+| ProjectChat | 单项目问答，基于已有分析报告和摘要回答用户提问 |
 
 ## 快速启动
 
 ```bash
-# 1. 安装依赖
+# 安装依赖
 npm install
 
-# 2. 配置环境变量
-# 编辑 .env.local，填入 CUSTOM_BASE_URL、CUSTOM_API_KEY 和 GITHUB_TOKEN
+# 配置环境变量
+cp .env.example .env.local
+# 编辑 .env.local，填入必要的 API Key
 
-# 3. 初始化数据库
+# 初始化数据库
 npx drizzle-kit push
 
-# 4. 启动开发服务器
+# 启动
 npm run dev
-
-# 5. 打开 http://localhost:3000
 ```
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `DEFAULT_PROVIDER` | LLM 供应商（`custom`） |
+| `CUSTOM_BASE_URL` | LLM API 地址 |
+| `CUSTOM_API_KEY` | LLM API Key |
+| `CUSTOM_MODEL_FAST` | 快速模型 |
+| `CUSTOM_MODEL_SMART` | 高质量模型 |
+| `ANALYST_MODEL` | 分析师模型 |
+| `ADVISOR_MODEL` | 顾问模型 |
+| `PROJECT_CHAT_MODEL` | 项目问答模型 |
+| `GITHUB_TOKEN` | GitHub API Token |
+| `TAVILY_API_KEY` | 网络搜索（可选） |
+| `TURSO_DATABASE_URL` | 生产数据库地址（可选） |
+| `TURSO_AUTH_TOKEN` | 生产数据库 Token（可选） |
 
 ## 项目结构
 
 ```
 src/
 ├── app/                        # Next.js App Router
-│   ├── page.tsx                # 首页 Feed（项目卡片 + 搜索 + 标签筛选）
-│   ├── project/[id]/page.tsx   # 项目详情（AI 摘要 + 深度分析）
-│   ├── bookmarks/page.tsx      # 我的收藏（收藏列表 + 笔记）
-│   ├── chat/page.tsx           # 对话页（与 Advisor Agent 聊天）
-│   ├── layout.tsx              # 根布局（Navbar + 全局样式）
-│   └── api/
-│       ├── scan/route.ts       # POST - 触发扫描  GET - 扫描进度
-│       ├── projects/route.ts   # GET - 项目列表（tag/search 过滤）
-│       ├── projects/[id]/      # GET - 项目详情 + 标签 + 收藏状态
-│       ├── chat/route.ts       # POST - Advisor SSE 流式对话
-│       ├── tags/route.ts       # GET - 标签列表
-│       └── bookmarks/route.ts  # GET/POST/PATCH - 收藏管理
-├── components/
-│   ├── Navbar.tsx              # 顶部导航栏（发现 / 收藏 / 对话）
-│   ├── ProjectCard.tsx         # 项目卡片
-│   ├── ScanButton.tsx          # 扫描按钮 + 进度条
-│   ├── ChatPanel.tsx           # 聊天面板（SSE 流式）
-│   └── ui/                     # shadcn/ui 基础组件
+│   ├── page.tsx                # 首页 Feed（搜索 + 标签筛选 + 分页）
+│   ├── project/[id]/           # 项目详情（AI 摘要 + 深度分析 + 问答）
+│   ├── bookmarks/              # 收藏列表
+│   ├── chat/                   # 全局 AI 对话
+│   └── api/                    # API 路由（scan/projects/tags/chat/bookmarks）
+├── components/                 # UI 组件
+├── hooks/                      # 自定义 Hooks（SSE 聊天流等）
 └── lib/
-    ├── config.ts               # 全局配置（扫描参数、AI 话题）
-    ├── llm.ts                  # LLM 统一封装（多供应商、流式/非流式）
-    ├── scan-state.ts           # 扫描状态管理
-    ├── utils.ts                # 工具函数
-    ├── db/
-    │   ├── schema.ts           # Drizzle Schema（5 张表）
-    │   └── index.ts            # SQLite 连接
-    ├── mcp/github/
-    │   ├── tools.ts            # GitHub API 封装
-    │   └── server.ts           # GitHub MCP Server
-    ├── agents/
-    │   ├── types.ts            # Agent 类型定义
-    │   ├── scout.ts            # Scout — 搜索 GitHub + 本地打分筛选
-    │   ├── analyst.ts          # Analyst — 深度分析 + 摘要
-    │   ├── advisor.ts          # Advisor — 对话顾问，可委派 Analyst
-    │   └── orchestrator.ts     # 编排器 — 串联 Scout → Analyst
-    └── skills/
-        ├── types.ts            # Skill 接口
-        ├── index.ts            # Skill 注册中心
-        ├── repo-reader.ts      # 仓库深度分析
-        ├── summarizer.ts       # 中文摘要生成
-        └── comparator.ts       # 项目横向对比
-```
-
-## Agent 协作
-
-| Agent | 模型 | 职责 |
-|-------|------|------|
-| Scout | 无 LLM（本地打分） | 搜索 GitHub，本地打分筛选 |
-| Analyst | doubao-seed-2.0-code | 深度分析项目（README → 报告 + 摘要） |
-| Advisor | kimi-k2.5 | 对话顾问，可委派 Analyst 做即时分析 |
-
-```
-用户点击「扫描」
-    ↓
-Scout — 搜索 GitHub（created:> 只搜新项目）→ 本地打分筛选（秒级）
-    ↓
-Orchestrator — 预取 README（8 并发）→ 分派 Analyst（5 并发）
-    ↓
-Analyst — 深度分析 + 摘要 → 自动打标签 + 评分 → 存入 SQLite
-    ↓
-前端 Feed 展示（进度条 + 骨架屏）
+    ├── agents/                 # Scout / Analyst / Advisor / Orchestrator
+    ├── skills/                 # repo-reader / summarizer / comparator
+    ├── db/                     # 数据库 Schema + 连接
+    ├── mcp/github/             # GitHub API 封装
+    ├── llm.ts                  # LLM 统一调用封装
+    └── config.ts               # 全局配置
 ```
 
 ## 数据库
 
 | 表 | 说明 |
 |----|------|
-| projects | 项目元数据 + AI 摘要和分析 |
-| tags | 标签 |
-| project_tags | 项目-标签关联 |
-| bookmarks | 收藏（含笔记） |
+| projects | 项目元数据 + AI 摘要 + 深度分析报告 + 评分 |
+| tags / project_tags | 标签及项目-标签关联 |
+| bookmarks | 收藏（含备注） |
 | chat_history | 对话历史 |
