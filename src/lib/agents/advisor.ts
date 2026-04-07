@@ -8,11 +8,11 @@ import { webSearch, detectWebSearchNeed, detectProjectChatSearch } from '../sear
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { RawProject } from './types';
 
-const advisorModel = process.env.ADVISOR_MODEL || 'kimi-k2.5';
+const advisorModel = process.env.ADVISOR_MODEL || 'deepseek-chat';
 const projectChatModel =
   process.env.PROJECT_CHAT_MODEL ||
   process.env.CUSTOM_MODEL_FAST ||
-  'glm-4.7';
+  'deepseek-chat';
 const projectChatMaxTokens = Number(process.env.PROJECT_CHAT_MAX_TOKENS || 640);
 
 const config: AgentConfig = {

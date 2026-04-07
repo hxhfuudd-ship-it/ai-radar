@@ -18,31 +18,21 @@
 |----|------|
 | 框架 | Next.js 16 (App Router, Turbopack) + TypeScript |
 | UI | React 19 + TailwindCSS 4 + shadcn/ui |
-| 数据库 | SQLite (本地) / Turso (生产) + Drizzle ORM |
-| LLM | OpenAI 兼容接口（DeepSeek 等） |
+| 数据库 | SQLite (本地) / Turso (生产) + Drizzle ORM (@libsql/client) |
+| LLM | OpenAI 兼容接口（当前使用 DeepSeek API） |
 | 外部数据 | GitHub REST API + Tavily 网络搜索 |
-| 部署 | Vercel (Serverless) |
+| 渲染 | streamdown + @streamdown/cjk（流式 Markdown） |
+| 部署 | Vercel (Serverless) + PWA 支持 |
 
-## 多 Agent 架构
+## 功能特性
 
-```
-用户点击「扫描」
-    ↓
-Scout — 搜索 GitHub trending + topic，本地打分筛选（无 LLM）
-    ↓
-Orchestrator — 批量获取 README（8 并发）→ 分派 Analyst（5 并发）
-    ↓
-Analyst — 深度分析 + 摘要 → 自动打标签 + 评分 → 存入数据库
-    ↓
-前端 Feed 实时进度展示
-```
-
-| Agent | 职责 |
-|-------|------|
-| Scout | 搜索 GitHub，按 AI 关键词 + stars + forks 本地打分筛选 |
-| Analyst | 读取项目 README，生成深度分析报告（500-800 字）和摘要（100-200 字） |
-| Advisor | 全局对话顾问，搜索知识库回答问题，必要时委派 Analyst 做即时深度分析 |
-| ProjectChat | 单项目问答，基于已有分析报告和摘要回答用户提问 |
+- **双模式浏览** — 近 90 天最热（按热度排序）/ AI 推荐（按综合评分排序）
+- **自动扫描** — Scout Agent 搜索 GitHub + 本地打分筛选，Analyst 生成深度分析报告
+- **AI 问答** — 全局对话 + 项目问答，可委派 Analyst 即时分析，可触发 Web Search
+- **收藏管理** — 收藏项目 + 添加笔记，收藏项目不会被自动清理
+- **流式体验** — NDJSON 扫描进度 + SSE 对话流式输出
+- **PWA 支持** — 添加到手机主屏幕，像 App 一样使用
+- **响应式适配** — 移动端优化 + iOS safe-area 适配
 
 ## 快速启动
 
@@ -68,35 +58,94 @@ npm run dev
 | `DEFAULT_PROVIDER` | LLM 供应商（`custom`） |
 | `CUSTOM_BASE_URL` | LLM API 地址 |
 | `CUSTOM_API_KEY` | LLM API Key |
-| `CUSTOM_MODEL_FAST` | 快速模型 |
-| `CUSTOM_MODEL_SMART` | 高质量模型 |
-| `ANALYST_MODEL` | 分析师模型 |
-| `ADVISOR_MODEL` | 顾问模型 |
-| `PROJECT_CHAT_MODEL` | 项目问答模型 |
+| `CUSTOM_MODEL_FAST` | 快速模型（当前 `deepseek-chat`） |
+| `CUSTOM_MODEL_SMART` | 高质量模型（当前 `deepseek-chat`） |
+| `ANALYST_MODEL` | 分析师模型（当前 `deepseek-chat`） |
+| `ADVISOR_MODEL` | 顾问模型（当前 `deepseek-chat`） |
+| `PROJECT_CHAT_MODEL` | 项目问答模型（当前 `deepseek-chat`） |
 | `GITHUB_TOKEN` | GitHub API Token |
 | `TAVILY_API_KEY` | 网络搜索（可选） |
 | `TURSO_DATABASE_URL` | 生产数据库地址（可选） |
 | `TURSO_AUTH_TOKEN` | 生产数据库 Token（可选） |
 
+本地开发无需配置 Turso，自动回退到本地 SQLite 文件 `data/ai-radar.db`。
+
 ## 项目结构
 
 ```
 src/
-├── app/                        # Next.js App Router
-│   ├── page.tsx                # 首页 Feed（搜索 + 标签筛选 + 分页）
-│   ├── project/[id]/           # 项目详情（AI 摘要 + 深度分析 + 问答）
-│   ├── bookmarks/              # 收藏列表
-│   ├── chat/                   # 全局 AI 对话
-│   └── api/                    # API 路由（scan/projects/tags/chat/bookmarks）
-├── components/                 # UI 组件
-├── hooks/                      # 自定义 Hooks（SSE 聊天流等）
+├── app/                          # Next.js App Router
+│   ├── page.tsx                  # 首页（双模式 + 分页 + 标签筛选 + 搜索）
+│   ├── project/[id]/page.tsx     # 项目详情（Server Component）
+│   ├── project/[id]/client.tsx   # 详情页客户端组件
+│   ├── bookmarks/page.tsx        # 我的收藏（收藏列表 + 笔记）
+│   ├── chat/page.tsx             # 对话页（与 Advisor Agent 聊天）
+│   ├── layout.tsx                # 根布局（Navbar + PWA + safe-area）
+│   └── api/
+│       ├── scan/route.ts         # POST - 扫描（NDJSON 流式进度） GET - 状态
+│       ├── projects/route.ts     # GET - 项目列表（tag/search/mode + 分页）
+│       ├── projects/[id]/route.ts # GET - 项目详情 + 标签 + 收藏状态
+│       ├── chat/route.ts         # POST - Advisor SSE 流式对话
+│       ├── tags/route.ts         # GET - 标签列表（按模式过滤）
+│       └── bookmarks/route.ts    # GET/POST/PATCH - 收藏管理
+├── hooks/
+│   └── useChatStream.ts          # 共享流式对话 hook（RAF + SSE 行缓冲）
+├── components/
+│   ├── BrandLogo.tsx             # 品牌 Logo 组件
+│   ├── Navbar.tsx                # 顶部导航栏（发现 / 收藏 / 对话）
+│   ├── ProjectCard.tsx           # 项目卡片
+│   ├── ScanButton.tsx            # ScanProvider + ScanButton + ScanProgress
+│   ├── ChatPanel.tsx             # 全局聊天面板
+│   ├── ProjectChat.tsx           # 项目内嵌对话
+│   ├── MarkdownContent.tsx       # 流式 Markdown 渲染（streamdown + cjk）
+│   ├── ServiceWorkerRegister.tsx # PWA Service Worker 注册
+│   └── ui/                       # shadcn/ui 基础组件
 └── lib/
-    ├── agents/                 # Scout / Analyst / Advisor / Orchestrator
-    ├── skills/                 # repo-reader / summarizer / comparator
-    ├── db/                     # 数据库 Schema + 连接
-    ├── mcp/github/             # GitHub API 封装
-    ├── llm.ts                  # LLM 统一调用封装
-    └── config.ts               # 全局配置
+    ├── config.ts                 # 全局配置（扫描参数、供应商、话题）
+    ├── llm.ts                    # LLM 统一封装（多供应商、流式/非流式）
+    ├── search.ts                 # Tavily Web Search 封装
+    ├── scan-state.ts             # 扫描状态
+    ├── utils.ts                  # 工具函数
+    ├── db/
+    │   ├── schema.ts             # Drizzle Schema（5 张表）
+    │   └── index.ts              # @libsql/client 连接（异步）
+    ├── mcp/github/
+    │   ├── tools.ts              # GitHub REST API 封装
+    │   └── server.ts             # GitHub MCP Server
+    ├── agents/
+    │   ├── types.ts              # Agent 类型定义
+    │   ├── scout.ts              # Scout — 搜索 GitHub + 本地打分筛选
+    │   ├── analyst.ts            # Analyst — 深度分析 + 摘要
+    │   ├── advisor.ts            # Advisor — 对话顾问，可委派 Analyst
+    │   └── orchestrator.ts       # 编排器 — 串联 Scout → Analyst
+    └── skills/
+        ├── types.ts              # Skill 接口
+        ├── index.ts              # Skill 注册中心
+        ├── repo-reader.ts        # 仓库深度分析（500-800 字报告）
+        ├── summarizer.ts         # 中文摘要（100-200 字）
+        └── comparator.ts         # 项目横向对比
+```
+
+## Agent 协作
+
+| Agent | 模型 (env) | 职责 |
+|-------|------------|------|
+| Scout | 无 LLM（本地打分） | 搜索 GitHub，本地打分筛选 |
+| Analyst | deepseek-chat (ANALYST_MODEL) | 深度分析项目（README → 报告 + 摘要） |
+| Advisor | deepseek-chat (ADVISOR_MODEL / PROJECT_CHAT_MODEL) | 全局对话 + 项目问答，可委派 Analyst，可触发 Web Search |
+
+```
+用户点击「扫描」
+    ↓
+清理过期项目 + 刷新已有项目元数据（GitHub API）
+    ↓
+Scout — 搜索 GitHub（热榜 + 推荐池）→ 本地打分筛选（秒级）
+    ↓
+Orchestrator — 预取 README（8 并发）→ 分派 Analyst（5 并发）
+    ↓
+Analyst — 深度分析 + 摘要 → 自动打标签 + 评分 → 存入数据库
+    ↓
+前端 Feed 展示（NDJSON 流式进度条 + 骨架屏）
 ```
 
 ## 数据库
@@ -104,6 +153,7 @@ src/
 | 表 | 说明 |
 |----|------|
 | projects | 项目元数据 + AI 摘要 + 深度分析报告 + 评分 |
-| tags / project_tags | 标签及项目-标签关联 |
-| bookmarks | 收藏（含备注） |
-| chat_history | 对话历史 |
+| tags | 标签 |
+| project_tags | 项目-标签关联 |
+| bookmarks | 收藏（含笔记） |
+| chat_history | 对话历史（已定义，暂未使用） |
