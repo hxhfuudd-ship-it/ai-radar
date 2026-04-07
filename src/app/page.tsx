@@ -13,9 +13,15 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { Project } from '@/lib/db/schema';
 
 type ProjectSortMode = 'hot' | 'recommended';
+type HotWindow = 7 | 30 | 90;
 type PaginationItem = number | 'ellipsis';
 
 const PAGE_SIZE = 12;
+const HOT_WINDOWS: { value: HotWindow; label: string }[] = [
+  { value: 7, label: '本周' },
+  { value: 30, label: '本月' },
+  { value: 90, label: '近3月' },
+];
 
 function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
   if (totalPages <= 7) {
@@ -49,6 +55,7 @@ export default function HomePage() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState<ProjectSortMode>('hot');
+  const [hotWindow, setHotWindow] = useState<HotWindow>(30);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -56,6 +63,7 @@ export default function HomePage() {
   const initialLoadRef = useRef(true);
   const initialPageLoadRef = useRef(true);
   const previousModeRef = useRef<ProjectSortMode>('hot');
+  const previousWindowRef = useRef<HotWindow>(30);
   const previousTagRef = useRef<string | null>(null);
   const previousSearchRef = useRef('');
   const activeRequestIdRef = useRef(0);
@@ -72,16 +80,19 @@ export default function HomePage() {
     tag: string | null;
     q: string;
     mode: ProjectSortMode;
+    window: HotWindow;
   }>({
     tag: null,
     q: '',
     mode: 'hot',
+    window: 30,
   });
 
   requestContextRef.current = {
     tag: selectedTag,
     q: search,
     mode: sortMode,
+    window: hotWindow,
   };
 
   const fetchTags = useCallback(async (mode: ProjectSortMode, requestId: number) => {
@@ -108,6 +119,7 @@ export default function HomePage() {
     mode: ProjectSortMode,
     page: number,
     requestId: number,
+    window?: HotWindow,
   ) => {
     projectsAbortRef.current?.abort();
     const controller = new AbortController();
@@ -117,6 +129,7 @@ export default function HomePage() {
       if (tag) params.set('tag', tag);
       if (q) params.set('search', q);
       params.set('mode', mode);
+      if (mode === 'hot' && window) params.set('window', String(window));
       params.set('limit', String(PAGE_SIZE));
       params.set('offset', String((page - 1) * PAGE_SIZE));
       const res = await fetch(`/api/projects?${params}`, { signal: controller.signal });
@@ -150,12 +163,14 @@ export default function HomePage() {
     mode,
     page,
     includeTags,
+    window: win,
   }: {
     tag: string | null;
     q: string;
     mode: ProjectSortMode;
     page: number;
     includeTags: boolean;
+    window?: HotWindow;
   }) => {
     const requestId = activeRequestIdRef.current + 1;
     activeRequestIdRef.current = requestId;
@@ -167,7 +182,7 @@ export default function HomePage() {
       tagsAbortRef.current = null;
     }
 
-    const tasks: Promise<unknown>[] = [fetchProjects(tag, q, mode, page, requestId)];
+    const tasks: Promise<unknown>[] = [fetchProjects(tag, q, mode, page, requestId, win)];
     if (includeTags) tasks.push(fetchTags(mode, requestId));
 
     try {
@@ -181,7 +196,7 @@ export default function HomePage() {
 
   // Initial load
   useEffect(() => {
-    void runRequestBatch({ tag: null, q: '', mode: 'hot', page: 1, includeTags: true });
+    void runRequestBatch({ tag: null, q: '', mode: 'hot', page: 1, includeTags: true, window: 30 });
   }, [runRequestBatch]);
 
   // Debounced re-fetch on filter changes (skip first render)
@@ -192,28 +207,29 @@ export default function HomePage() {
     }
 
     const modeChanged = sortMode !== previousModeRef.current;
+    const windowChanged = hotWindow !== previousWindowRef.current;
     const tagChanged = selectedTag !== previousTagRef.current;
     const searchChanged = search !== previousSearchRef.current;
     const includeTags = modeChanged;
 
     if (modeChanged) previousModeRef.current = sortMode;
+    if (windowChanged) previousWindowRef.current = hotWindow;
     if (tagChanged) previousTagRef.current = selectedTag;
     if (searchChanged) previousSearchRef.current = search;
 
-    if (!modeChanged && !tagChanged && !searchChanged) {
+    if (!modeChanged && !windowChanged && !tagChanged && !searchChanged) {
       return;
     }
 
     if (currentPage !== 1) {
       pendingPageResetRef.current = {
         includeTags,
-        debounce: !modeChanged && !tagChanged,
+        debounce: !modeChanged && !windowChanged && !tagChanged,
       };
       setCurrentPage(1);
       return;
     }
 
-    // For tag/mode changes fire immediately; for search debounce 300ms
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     pendingSearchRef.current = search;
 
@@ -224,21 +240,20 @@ export default function HomePage() {
         mode: sortMode,
         page: 1,
         includeTags,
+        window: hotWindow,
       });
     };
 
-    if (modeChanged || tagChanged) {
-      // mode or tag changed — fire now, cancel any pending search debounce
+    if (modeChanged || windowChanged || tagChanged) {
       fire();
     } else {
-      // only search changed — debounce
       searchDebounceRef.current = setTimeout(fire, 300);
     }
 
     return () => {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
-  }, [currentPage, selectedTag, search, sortMode, runRequestBatch]);
+  }, [currentPage, selectedTag, search, sortMode, hotWindow, runRequestBatch]);
 
   useEffect(() => {
     if (initialPageLoadRef.current) {
@@ -258,6 +273,7 @@ export default function HomePage() {
           mode: requestContextRef.current.mode,
           page: currentPage,
           includeTags: pendingPageReset.includeTags,
+          window: requestContextRef.current.window,
         });
       };
 
@@ -276,6 +292,7 @@ export default function HomePage() {
       mode: requestContextRef.current.mode,
       page: currentPage,
       includeTags: false,
+      window: requestContextRef.current.window,
     });
   }, [currentPage, runRequestBatch]);
 
@@ -292,8 +309,9 @@ export default function HomePage() {
       mode: sortMode,
       page: currentPage,
       includeTags: true,
+      window: hotWindow,
     });
-  }, [currentPage, selectedTag, search, sortMode, runRequestBatch]);
+  }, [currentPage, selectedTag, search, sortMode, hotWindow, runRequestBatch]);
 
   const goToPage = useCallback((page: number) => {
     const nextPage = Math.max(1, Math.min(page, totalPages));
@@ -316,7 +334,7 @@ export default function HomePage() {
             <h1 className="text-2xl font-bold">AI Radar</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {sortMode === 'hot'
-                ? '近 90 天创建的 AI 项目，按热度排序'
+                ? '发现正在爆发的 AI 新项目'
                 : '跨周期 AI 精选，兼顾长期价值、维护活跃度和技术质量'}
             </p>
           </div>
@@ -326,16 +344,35 @@ export default function HomePage() {
         <ScanProgress />
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Tabs value={sortMode} onValueChange={value => setSortMode(value as ProjectSortMode)}>
-            <TabsList>
-              <TabsTrigger value="hot">近 90 天最火</TabsTrigger>
-              <TabsTrigger value="recommended">AI 推荐</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-3">
+            <Tabs value={sortMode} onValueChange={value => setSortMode(value as ProjectSortMode)}>
+              <TabsList>
+                <TabsTrigger value="hot">最新最热</TabsTrigger>
+                <TabsTrigger value="recommended">AI 推荐</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {sortMode === 'hot' ? (
+              <div className="flex items-center gap-1">
+                {HOT_WINDOWS.map(w => (
+                  <button
+                    key={w.value}
+                    onClick={() => setHotWindow(w.value)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      hotWindow === w.value
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    }`}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <p className="text-xs text-muted-foreground">
             {sortMode === 'hot'
-              ? '按 Stars、Forks、最近更新时间排序'
-              : '按 AI 推荐分、Stars、最近更新时间排序'}
+              ? '按增长速度排序，发现正在爆发的项目'
+              : '按综合质量排序，发现长期优质项目'}
           </p>
         </div>
 
@@ -412,7 +449,7 @@ export default function HomePage() {
             <p className="text-lg font-medium">加载失败</p>
             <p className="mt-2 text-sm">网络异常，请检查连接后重试</p>
             <button
-              onClick={() => runRequestBatch({ tag: selectedTag, q: search, mode: sortMode, page: currentPage, includeTags: true })}
+              onClick={() => runRequestBatch({ tag: selectedTag, q: search, mode: sortMode, page: currentPage, includeTags: true, window: hotWindow })}
               className="mt-4 rounded-md border px-4 py-2 text-sm transition-colors hover:bg-accent active:bg-accent"
             >
               重新加载

@@ -14,6 +14,12 @@ interface RepoForRank {
   forks_count: number;
   full_name: string;
   updated_at: string;
+  created_at: string;
+}
+
+function starsPerDay(repo: RepoForRank): number {
+  const age = Math.max(1, (Date.now() - new Date(repo.created_at).getTime()) / 86_400_000);
+  return repo.stargazers_count / age;
 }
 
 function scoreHotRepo(repo: RepoForRank): number {
@@ -25,6 +31,12 @@ function scoreHotRepo(repo: RepoForRank): number {
   if (repo.stargazers_count > 5000) score += 3;
   else if (repo.stargazers_count > 1000) score += 2;
   else if (repo.stargazers_count > 100) score += 1;
+
+  const velocity = starsPerDay(repo);
+  if (velocity > 100) score += 5;
+  else if (velocity > 30) score += 4;
+  else if (velocity > 10) score += 3;
+  else if (velocity > 3) score += 2;
 
   if (repo.topics.length >= 3) score += 1;
   if (repo.description && repo.description.length > 30) score += 1;
@@ -93,9 +105,9 @@ export async function runScout(): Promise<ScanResult> {
     .map(r => ({ repo: r, score: scoreHotRepo(r) }))
     .filter(s => s.score >= 3)
     .sort((a, b) =>
+      b.score - a.score ||
       b.repo.stargazers_count - a.repo.stargazers_count ||
-      b.repo.forks_count - a.repo.forks_count ||
-      b.score - a.score
+      b.repo.forks_count - a.repo.forks_count
     )
     .slice(0, APP_CONFIG.maxHotProjectsPerScan);
 

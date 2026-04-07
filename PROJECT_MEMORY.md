@@ -42,7 +42,7 @@ npm run dev
 ```
 User clicks 扫描
   → cleanupOldProjects (365天 + 去重，收藏跳过)
-  → refreshTrackedProjects (8并发刷新已有项目 GitHub 元数据)
+  → refreshTrackedProjects (8并发刷新已有项目 GitHub 元数据，stars 变化时快照到 previousStars/previousStarsAt)
   → Scout       搜索 GitHub (trending + topic search), 本地打分筛选 (hot + recommended 双池)
   → Orchestrator 批量抓 README (8并发) → 调 Analyst (5并发)
   → Analyst     repo-reader skill (深度分析) + summarizer skill (摘要) → 打标签 + 评分 → DB
@@ -76,7 +76,7 @@ src/app/
 
 src/components/
   BrandLogo.tsx             品牌 Logo（Next Image + SVG）
-  ProjectCard.tsx           React.memo卡片，显示stars/forks/tags/score
+  ProjectCard.tsx           React.memo卡片，标题17字截断，stars/forks紧凑格式(formatStars)，NEW徽章+TRENDING箭头，推荐指数1-5星
   ScanButton.tsx            扫描按钮 + ScanProvider + ScanProgress（Context 三组件）
   ChatPanel.tsx             全局聊天面板（SSE + useChatStream）
   ProjectChat.tsx           项目内聊天（SSE + useChatStream）
@@ -107,7 +107,7 @@ src/lib/
 ## Database Schema
 | Table | Key Fields |
 |-------|------------|
-| `projects` | id, fullName, stars, forks, summary, analysis, score, repoCreatedAt, discoveredAt, analyzedAt |
+| `projects` | id, fullName, stars, forks, summary, analysis, score, repoCreatedAt, previousStars, previousStarsAt, discoveredAt, analyzedAt |
 | `tags` | id, name (unique) |
 | `project_tags` | projectId, tagId |
 | `bookmarks` | id, projectId, note, createdAt |
@@ -124,6 +124,21 @@ src/lib/
 | `analysisConcurrency` | 5 | Analyst并发数 |
 | `skipIfAnalyzedWithinDays` | 1 | 1天内已分析则跳过（force扫描可覆盖）|
 | `projectRetentionDays` | 365 | 超过365天的项目自动清理（收藏项目保留）|
+
+## Velocity Calculation (热榜增速)
+- 热榜排序用 `computeVelocity`（`src/app/api/projects/route.ts`）
+- 优先用真实 delta：`(stars - previousStars) / 间隔天数`，**要求快照间隔 ≥ 12 小时**
+- 快照不满 12h 或无历史快照时退回估算：`stars / 创建天数`
+- 每次扫描刷新元数据时，stars 有变化且距上次快照 ≥ 12h 才更新 `previousStars`/`previousStarsAt`（`shouldSnapshotStars` 守卫，防止同一次扫描内多次覆盖）
+- 前端 TRENDING 标记（ProjectCard）也用同样逻辑，增速 > 30 stars/天显示趋势箭头
+
+## Recommended Mode (AI 推荐)
+- 搜索：6 topics × `stars>300 pushed>180天前`，按 stars 排序，每个取 10 个
+- Scout 打分：`scoreRecommendedRepo` = `scoreHotRepo` 基础分 + stars/forks/活跃度额外加权，门槛 ≥ 5，取 Top 12
+- 推荐指数：`computeProjectScore`（analyst.ts）6 维度评分，`Math.round(总分/2.5)` → 1-5 星
+  - 维度：stars 热度(+6)、forks(+2)、信息完整度(+2)、AI 报告质量(+2)、维护活跃度(+1.5/-0.5)、成熟度(+0.5)
+  - AI 报告长度也是评分因子——文档丰富的项目得分更高
+- API 排序：`ORDER BY score DESC, stars DESC, repo_updated_at DESC`，无时间窗口
 
 ## Notes
 - `comparatorSkill` 已定义并注册但尚未接入 Advisor，对比能力目前走 Analyst 直接分析

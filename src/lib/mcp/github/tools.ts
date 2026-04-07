@@ -35,16 +35,21 @@ export async function searchRepos(query: string, sort = 'stars', perPage = 20): 
 
 export async function getTrendingAIRepos(windowDays = 90): Promise<GitHubRepo[]> {
   const dateStr = getRecentDate(windowDays);
+  const recentDateStr = getRecentDate(14);
   const queries = [
     `topic:llm stars:>10 created:>${dateStr}`,
     `topic:agent stars:>10 created:>${dateStr}`,
     `topic:ai-agent stars:>10 created:>${dateStr}`,
     `topic:mcp stars:>5 created:>${dateStr}`,
     `topic:rag stars:>10 created:>${dateStr}`,
+    // Catch recently active but newer projects that might not have high stars yet
+    `topic:llm stars:>3 created:>${recentDateStr}`,
+    `topic:agent stars:>3 created:>${recentDateStr}`,
+    `topic:mcp stars:>3 created:>${recentDateStr}`,
   ];
 
   const allResults = await Promise.allSettled(
-    queries.map(q => searchRepos(q, 'stars', 10))
+    queries.map((q, i) => searchRepos(q, i >= 5 ? 'updated' : 'stars', 10))
   );
 
   const results: GitHubRepo[] = [];

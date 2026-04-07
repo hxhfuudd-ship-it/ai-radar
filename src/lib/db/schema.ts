@@ -16,6 +16,8 @@ export const projects = sqliteTable('projects', {
   score: real('score'),
   repoCreatedAt: text('repo_created_at'),
   repoUpdatedAt: text('repo_updated_at'),
+  previousStars: integer('previous_stars'),
+  previousStarsAt: text('previous_stars_at'),
   discoveredAt: text('discovered_at').notNull(),
   analyzedAt: text('analyzed_at'),
 });

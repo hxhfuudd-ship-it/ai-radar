@@ -14,6 +14,13 @@ import { eq, lt } from 'drizzle-orm';
 import { getRepoDetail, getRepoReadme } from '../mcp/github/tools';
 import { APP_CONFIG } from '../config';
 
+const MIN_SNAPSHOT_GAP_MS = 12 * 3_600_000;
+
+function shouldSnapshotStars(existingPreviousStarsAt: string | null | undefined): boolean {
+  if (!existingPreviousStarsAt) return true;
+  return Date.now() - new Date(existingPreviousStarsAt).getTime() >= MIN_SNAPSHOT_GAP_MS;
+}
+
 export interface ScanProgress {
   phase: 'scouting' | 'fetching' | 'analyzing' | 'done' | 'error';
   total: number;
@@ -76,6 +83,10 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         };
+        const prevStarsUpdate =
+          p.stars !== existing.stars && shouldSnapshotStars(existing.previousStarsAt)
+            ? { previousStars: existing.stars, previousStarsAt: new Date().toISOString() }
+            : {};
         await db.update(schema.projects)
           .set({
             name: p.name,
@@ -90,6 +101,7 @@ export async function runFullScan(onProgress?: ProgressCallback, force = false) 
             score: existing.analysis
               ? computeProjectScore(refreshedProject, existing.analysis)
               : existing.score,
+            ...prevStarsUpdate,
           })
           .where(eq(schema.projects.id, existing.id))
           .run();
@@ -295,8 +307,12 @@ async function processProject(
   }
 
   if (existing) {
+    const prevStarsUpdate =
+      project.stars !== existing.stars && shouldSnapshotStars(existing.previousStarsAt)
+        ? { previousStars: existing.stars, previousStarsAt: new Date().toISOString() }
+        : {};
     await db.update(schema.projects)
-      .set(record)
+      .set({ ...record, ...prevStarsUpdate })
       .where(eq(schema.projects.id, existing.id))
       .run();
   } else {
@@ -363,7 +379,7 @@ async function cleanupOldProjects() {
   const oldRows = await db
     .select({ id: schema.projects.id })
     .from(schema.projects)
-    .where(lt(schema.projects.discoveredAt, cutoff))
+    .where(lt(schema.projects.repoUpdatedAt, cutoff))
     .all();
   const old = oldRows.filter(p => !bookmarkedIds.has(p.id));
 
@@ -373,7 +389,7 @@ async function cleanupOldProjects() {
   }
 
   if (old.length > 0) {
-    console.log(`[Cleanup] 清理了 ${old.length} 个 ${APP_CONFIG.projectRetentionDays} 天前的旧项目（已跳过收藏项目）`);
+    console.log(`[Cleanup] 清理了 ${old.length} 个超过 ${APP_CONFIG.projectRetentionDays} 天未更新的项目（已跳过收藏项目）`);
   }
 
   const all = await db
@@ -413,6 +429,8 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
       fullName: schema.projects.fullName,
       analysis: schema.projects.analysis,
       score: schema.projects.score,
+      stars: schema.projects.stars,
+      previousStarsAt: schema.projects.previousStarsAt,
     })
     .from(schema.projects)
     .all();
@@ -445,6 +463,11 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
             updatedAt: detail.updated_at,
           };
 
+          const prevStarsUpdate =
+            detail.stargazers_count !== project.stars && shouldSnapshotStars(project.previousStarsAt)
+              ? { previousStars: project.stars, previousStarsAt: new Date().toISOString() }
+              : {};
+
           await db.update(schema.projects)
             .set({
               name: detail.name,
@@ -460,6 +483,7 @@ async function refreshTrackedProjects(onProgress?: ProgressCallback) {
               score: project.analysis
                 ? computeProjectScore(refreshedProject, project.analysis)
                 : project.score,
+              ...prevStarsUpdate,
             })
             .where(eq(schema.projects.id, project.id))
             .run();
