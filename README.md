@@ -1,6 +1,6 @@
 # AI Radar — 个人 AI 技术雷达
 
-自动追踪 GitHub 上最新的 AI 项目，通过多 Agent 协作完成项目发现、深度分析和智能问答，帮助用户快速了解 AI 技术动态。
+自动追踪 GitHub 上最新的 AI 项目，通过模块化流水线完成项目发现、深度分析和智能问答，帮助用户快速了解 AI 技术动态。
 
 **在线体验**: [myownproject-pi.vercel.app](https://myownproject-pi.vercel.app)
 
@@ -126,13 +126,14 @@ src/
         └── comparator.ts         # 项目横向对比
 ```
 
-## Agent 协作
+## 模块分工
 
-| Agent | 模型 (env) | 职责 |
-|-------|------------|------|
-| Scout | 无 LLM（本地打分） | 搜索 GitHub，本地打分筛选 |
+| 模块 | 模型 (env) | 职责 |
+|------|------------|------|
+| Scout | 无 LLM（纯算法打分） | 搜索 GitHub，本地打分筛选 |
 | Analyst | deepseek-chat (ANALYST_MODEL) | 深度分析项目（README → 报告 + 摘要） |
 | Advisor | deepseek-chat (ADVISOR_MODEL / PROJECT_CHAT_MODEL) | 全局对话 + 项目问答，可委派 Analyst，可触发 Web Search |
+| Orchestrator | — | 编排扫描流程，控制并发（8 路抓取 / 5 路分析） |
 
 ```
 用户点击「扫描」

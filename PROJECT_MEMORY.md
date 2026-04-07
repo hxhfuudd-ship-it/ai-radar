@@ -50,7 +50,7 @@ User clicks 扫描
 ```
 
 ### Model Roles (当前统一 deepseek-chat)
-| Agent | Model | Task |
+| 模块 | Model | Task |
 |-------|-------|------|
 | Scout | 无LLM | GitHub 搜索 + 本地打分 |
 | Analyst | `deepseek-chat` (`ANALYST_MODEL`) | 深度分析 + 摘要 |
